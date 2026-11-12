@@ -78,9 +78,8 @@ function verify_(token) {
 }
 
 function file_() {
-  const id = props.getProperty('FILE_ID');
-  if (!id) fail_('SETUP', '後台尚未執行 setup');
-  return DriveApp.getFileById(id);
+  if (!props.getProperty('FILE_ID')) setup();
+  return DriveApp.getFileById(props.getProperty('FILE_ID'));
 }
 
 /** 依雲端硬碟共用名單判斷權限（快取 5 分鐘） */
