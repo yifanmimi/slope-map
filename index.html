@@ -19,6 +19,11 @@
 html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
 body{position:fixed;top:0;left:0;right:0;bottom:0;width:auto;height:auto;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:0;box-sizing:border-box;touch-action:manipulation;background:var(--card)}
 #detail{padding-bottom:env(safe-area-inset-bottom)}
+/* iPhone 主畫面模式：版面高度會少算狀態列，改用整個螢幕高度 */
+@media (display-mode: standalone){body{bottom:auto;height:100vh}header{padding-top:8px}}
+html.ios-pwa body{bottom:auto;height:100vh}
+html.ios-pwa header{padding-top:8px}
+.leaflet-bottom{margin-bottom:env(safe-area-inset-bottom)}
 header,#results,#detail{flex:none}
 #detail{max-height:38dvh!important}
 #results{max-height:34dvh!important}
@@ -124,13 +129,14 @@ a.btn{text-decoration:none;display:inline-block}
   </div>
 </div>
 
-<script src="config.js?v=20261112f"></script>
+<script src="config.js?v=20261112g"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 (function(){
 const $=id=>document.getElementById(id);
+if(navigator.standalone)document.documentElement.classList.add('ios-pwa');
 addEventListener('orientationchange',()=>setTimeout(()=>window.scrollTo(0,0),300));
 let DATA=null; // {name, updatedAt, points:[...]}
 let db=null, canWrite=null;
