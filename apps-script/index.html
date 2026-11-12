@@ -44,6 +44,9 @@ a.btn{text-decoration:none;display:inline-block}
 .panel p{font-size:14px;line-height:1.6;margin:8px 0}
 #msg{font-size:14px;margin-top:8px;min-height:1.2em}
 .leaflet-control-layers{font-size:14px}
+.locbtn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:#fff;cursor:pointer}
+.locbtn svg{width:20px;height:20px}
+.locbtn.on svg{color:#1a73e8}
 .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:500;pointer-events:none}
 .empty div{background:var(--card);padding:16px 18px;border-radius:14px;max-width:300px;text-align:center;font-size:14px;line-height:1.6;pointer-events:auto;box-shadow:0 2px 12px rgba(0,0,0,.12)}
 .leaflet-tooltip.lbl{background:transparent;border:0;box-shadow:none;color:var(--ink);font-size:11px;font-weight:600;padding:0;text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
@@ -54,7 +57,7 @@ a.btn{text-decoration:none;display:inline-block}
 <header>
   <div class="top">
     <div class="title"><b id="mapName">邊坡圖資編號查詢</b><small id="mapInfo">載入中⋯</small></div>
-    <button class="btn" id="openUpload">載入檔案</button>
+    <button class="btn" id="openUpload" style="display:none">更換圖資</button>
   </div>
   <form class="search" id="sf">
     <input id="q" type="search" inputmode="search" placeholder="輸入編號，例如 NO035 或序號 310" autocomplete="off">
@@ -64,24 +67,20 @@ a.btn{text-decoration:none;display:inline-block}
 <div id="results"></div>
 <div style="position:relative;flex:1;display:flex;flex-direction:column">
   <div id="map"></div>
-  <div class="empty" id="empty" style="display:none"><div>還沒有圖資。<br>請把從 Google 我的地圖匯出的 KML 檔，命名為 map.kml 上傳到 GitHub。</div></div>
+  <div class="empty" id="empty" style="display:none"><div id="emptyMsg">還沒有圖資。</div></div>
 </div>
 <div id="detail"></div>
 
 <div class="overlay" id="ov">
   <div class="panel">
     <h2>更換圖資</h2>
-    <p>從 Google 我的地圖匯出（需用電腦瀏覽器）：</p>
-    <ol>
-      <li>開啟地圖，點地圖名稱旁的「⋮」</li>
-      <li>選「匯出至 KML/KMZ」</li>
-      <li>圖層選「整份地圖」，不要勾「保持資料在最新狀態」</li>
-      <li>下載後在這裡選擇檔案</li>
-    </ol>
-    <p style="color:var(--mute)">在這裡選的檔案只會暫時用在這台裝置。要讓所有人都換成新圖，請到 GitHub 把新檔案以 map.kml 的名稱上傳覆蓋。</p>
+    <p><b>方法一：從我的地圖同步</b><br>貼上我的地圖網址（地圖要開「知道連結的人可以檢視」）。</p>
+    <input id="src" type="url" style="width:100%;font-size:14px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+    <div class="row"><button class="btn pri" id="syncBtn">立即同步</button></div>
+    <p style="margin-top:16px"><b>方法二：上傳 KML / KMZ 檔</b><br>我的地圖（電腦版）→ 地圖名稱旁「⋮」→「匯出至 KML/KMZ」，選整份地圖，不要勾「保持資料在最新狀態」。</p>
     <input type="file" id="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz">
     <div id="msg"></div>
-    <div class="row"><button class="btn" id="resetLocal" style="display:none">改回共用版圖資</button><button class="btn" id="closeUpload">關閉</button></div>
+    <div class="row"><button class="btn" id="closeUpload">關閉</button></div>
   </div>
 </div>
 
@@ -96,11 +95,52 @@ const LS_KEY='slope-map-local-v1';
 
 // ---------- map ----------
 const map=L.map('map',{zoomControl:true,preferCanvas:true,maxZoom:20}).setView([24.99,121.57],13);
-const nlsc=(id,name)=>L.tileLayer('https://wmts.nlsc.gov.tw/wmts/'+id+'/default/GoogleMapsCompatible/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:id==='PHOTO2'?20:19,attribution:'國土測繪中心'});
-const bases={'電子地圖':nlsc('EMAP'),'正射影像':nlsc('PHOTO2'),'OpenStreetMap':L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,maxNativeZoom:19,attribution:'© OpenStreetMap'})};
-bases['電子地圖'].addTo(map);
-L.control.layers(bases,null,{position:'topright'}).addTo(map);
+const nlsc=(id,ext)=>L.tileLayer('https://wmts.nlsc.gov.tw/wmts/'+id+'/default/GoogleMapsCompatible/{z}/{y}/{x}',Object.assign({maxZoom:20,maxNativeZoom:19,attribution:'國土測繪中心'},ext||{}));
+const bases={
+  '國土測繪 電子地圖':nlsc('EMAP'),
+  '國土測繪 電子地圖＋等高線':nlsc('EMAP5'),
+  '國土測繪 正射影像':nlsc('PHOTO2',{maxNativeZoom:20}),
+  '國土測繪 地形暈渲（高程）':nlsc('MOI_HILLSHADE',{maxNativeZoom:16}),
+  'OpenTopoMap 地形圖':L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'abc',maxZoom:20,maxNativeZoom:17,attribution:'© OpenTopoMap (CC-BY-SA)'}),
+  'OpenStreetMap':L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,maxNativeZoom:19,attribution:'© OpenStreetMap'})
+};
+bases['國土測繪 電子地圖'].addTo(map);
+const layerCtl=L.control.layers(bases,{'等高線疊加（國土測繪）':nlsc('EMAP5',{opacity:.55})},{position:'topright'}).addTo(map);
+// Google 底圖（需在伺服器設定 Map Tiles API 金鑰）
+function addGoogleLayers(g){
+  if(!g||!g.key) return;
+  const names={roadmap:'Google 街道圖',satellite:'Google 衛星圖',terrain:'Google 地形圖'};
+  Object.entries(names).forEach(([t,label])=>{
+    const ses=g.sessions&&g.sessions[t]; if(!ses) return;
+    layerCtl.addBaseLayer(L.tileLayer('https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?session='+encodeURIComponent(ses)+'&key='+encodeURIComponent(g.key),{maxZoom:20,maxNativeZoom:t==='terrain'?15:20,attribution:'© Google'}),label);
+  });
+}
+// 縮放動畫中呼叫 setView 會被 Leaflet 忽略，等動畫結束再跳
+function goTo(ll,z){ if(map._animatingZoom){map.once('zoomend',()=>goTo(ll,z));return} map.setView(ll,z); }
 map.attributionControl.setPrefix(false);
+// ---------- 現在位置 ----------
+let me=null, meAcc=null, following=false, firstFix=false;
+const LocCtl=L.Control.extend({options:{position:'topleft'},onAdd(){
+  const d=L.DomUtil.create('div','leaflet-bar');
+  const a=L.DomUtil.create('a','locbtn',d); a.href='#'; a.title='我的位置';
+  a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg>';
+  L.DomEvent.on(a,'click',e=>{L.DomEvent.preventDefault(e);L.DomEvent.stopPropagation(e);
+    if(following&&me){goTo(me.getLatLng(),Math.max(map.getZoom(),17));return}
+    following=true;firstFix=false;a.classList.add('on');
+    map.locate({watch:true,enableHighAccuracy:true,setView:false,maximumAge:5000});
+  });
+  return d;}});
+map.addControl(new LocCtl());
+map.on('locationfound',e=>{
+  if(!me){me=L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).addTo(map);
+    meAcc=L.circle(e.latlng,{radius:e.accuracy,color:'#1a73e8',weight:1,fillOpacity:.1,interactive:false}).addTo(map)}
+  else{me.setLatLng(e.latlng);meAcc.setLatLng(e.latlng).setRadius(e.accuracy)}
+  me.bindTooltip('我的位置（誤差約 '+Math.round(e.accuracy)+' 公尺）');
+  if(!firstFix){firstFix=true;goTo(e.latlng,Math.max(map.getZoom(),17))}
+});
+map.on('locationerror',e=>{following=false;document.querySelector('.locbtn')?.classList.remove('on');
+  showToast(e.code===1?'沒有定位權限，請在瀏覽器設定允許此網站使用位置':'目前無法取得位置')});
+function showToast(t){let el=document.getElementById('toast');if(!el){el=document.createElement('div');el.id='toast';el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;z-index:3000;max-width:90%';document.body.appendChild(el)}el.textContent=t;el.style.display='block';clearTimeout(el._t);el._t=setTimeout(()=>el.style.display='none',3500)}
 const layerAll=L.layerGroup().addTo(map);
 let hiLayer=null, markers=[];
 const css=getComputedStyle(document.documentElement);
@@ -133,7 +173,7 @@ function render(){
     m.on('click',ev=>{L.DomEvent.stopPropagation(ev);select(i,false)});
     m.addTo(layerAll); markers.push(m); bounds.push(p.c);
   });
-  if(bounds.length) map.fitBounds(bounds,{padding:[20,20]});
+  if(bounds.length) map.fitBounds(bounds,{padding:[20,20],animate:false});
   updateLabels();
 }
 // labels only when zoomed in enough, to keep 1000 points readable
@@ -166,7 +206,7 @@ function select(i,fly=true){
     L.circleMarker(p.c,{radius:16,color:HI(),weight:3,fill:false}),
     L.circleMarker(p.c,{radius:7,color:'#fff',weight:2,fillColor:HI(),fillOpacity:1})
   ]).addTo(map);
-  if(fly) map.setView(p.c,Math.max(map.getZoom(),17));
+  if(fly) goTo(p.c,Math.max(map.getZoom(),17));
   const rows=Object.entries(p.f||{}).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
   const ll=p.c[0].toFixed(6)+','+p.c[1].toFixed(6);
   $('detail').innerHTML=`<h3>${esc(p.n)}</h3><div class="meta">${esc(p.l)}・${ll}</div>`+
@@ -272,46 +312,48 @@ async function readFile(file){
   return file.text?file.text():new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsText(file)});
 }
 
-// ---------- storage ----------
-const LS_KEY2='slope-map-override-v1';
-function saveLocal(parsed){
-  DATA={name:parsed.name,updatedAt:new Date().toISOString(),points:parsed.points,local:true};
-  try{localStorage.setItem(LS_KEY2,JSON.stringify(DATA))}catch(e){}
-  render(); $('resetLocal').style.display='inline-block';
+// ---------- 伺服器 ----------
+const run=(fn,...args)=>new Promise((ok,no)=>google.script.run.withSuccessHandler(ok).withFailureHandler(no)[fn](...args));
+function errText(e){const m=(e&&e.message)||String(e);return m.replace(/^Exception:\s*/,'')}
+async function saveParsed(parsed){
+  const json=JSON.stringify({name:parsed.name,points:parsed.points});
+  $('msg').textContent='上傳中⋯';
+  const r=await run('saveData',json);
+  DATA={name:parsed.name,updatedAt:r.updated,points:parsed.points};render();
+  $('msg').textContent=`完成，共 ${parsed.points.length} 筆，所有人重新整理後就會看到新版。`;
 }
 $('file').addEventListener('change',async e=>{
   const file=e.target.files[0]; if(!file) return;
   const msg=$('msg'); msg.style.color=''; msg.textContent='讀取中⋯';
-  try{const parsed=parseKML(await readFile(file));saveLocal(parsed);msg.textContent=`完成，共 ${parsed.points.length} 筆（只在這台裝置）。`;setTimeout(()=>{$('ov').style.display='none'},900)}
-  catch(err){msg.style.color='var(--hi)';msg.textContent=(err&&err.message)||'讀取失敗'}
+  try{await saveParsed(parseKML(await readFile(file)))}
+  catch(err){msg.style.color='var(--hi)';msg.textContent=errText(err)||'讀取失敗'}
   e.target.value='';
 });
-$('resetLocal').onclick=()=>{try{localStorage.removeItem(LS_KEY2)}catch(e){}$('resetLocal').style.display='none';$('ov').style.display='none';loadShared()};
+$('syncBtn').onclick=async()=>{
+  const msg=$('msg'); msg.style.color=''; msg.textContent='從我的地圖下載中⋯';
+  try{const kml=await run('fetchMyMaps',$('src').value.trim()); await saveParsed(parseKML(kml))}
+  catch(err){msg.style.color='var(--hi)';msg.textContent=errText(err)}
+};
 $('openUpload').onclick=()=>{$('msg').textContent='';$('ov').style.display='flex'};
 $('closeUpload').onclick=()=>{$('ov').style.display='none'};
 $('ov').addEventListener('click',e=>{if(e.target===$('ov'))$('ov').style.display='none'});
 
-async function fetchFirst(){
-  for(const f of ['map.kml','map.kmz']){
-    try{const r=await fetch(f+'?t='+Date.now(),{cache:'no-store'});if(!r.ok)continue;
-      if(f.endsWith('kmz')){const zip=await JSZip.loadAsync(await r.blob());const k=Object.keys(zip.files).find(n=>/\.kml$/i.test(n));if(k)return{text:await zip.files[k].async('string'),mod:r.headers.get('last-modified')}}
-      else return{text:await r.text(),mod:r.headers.get('last-modified')};
-    }catch(e){}
-  }
-  return null;
-}
-async function loadShared(){
+// ---------- 啟動 ----------
+(async()=>{
   $('mapInfo').textContent='下載圖資中⋯';
-  const got=await fetchFirst();
-  if(!got){DATA=null;render();$('mapInfo').textContent='找不到 map.kml';return}
-  try{const parsed=parseKML(got.text);DATA={name:parsed.name,updatedAt:got.mod||null,points:parsed.points};render()}
-  catch(err){DATA=null;render();$('mapInfo').textContent='map.kml 讀取失敗：'+err.message}
-}
-// ---------- boot ----------
-(function(){
-  let local=null;try{const s=localStorage.getItem(LS_KEY2);if(s)local=JSON.parse(s)}catch(e){}
-  if(local){DATA=local;DATA.local=true;render();$('resetLocal').style.display='inline-block'}
-  else loadShared();
+  try{
+    const r=await run('getData');
+    try{addGoogleLayers(r.google)}catch(e){}
+    if(r.canEdit){$('openUpload').style.display='';$('src').value=r.source||''}
+    if(r.data){const d=JSON.parse(r.data);DATA={name:d.name,updatedAt:r.updated,points:d.points||[]}}
+    render();
+    if(!DATA||!DATA.points.length) $('emptyMsg').textContent=r.canEdit?'還沒有圖資，按右上角「更換圖資」匯入。':'還沒有圖資。';
+  }catch(err){
+    DATA=null;render();
+    const m=errText(err);
+    $('mapInfo').textContent='無法讀取圖資';
+    $('emptyMsg').innerHTML=esc(m);
+  }
 })();
 })();
 </script>
