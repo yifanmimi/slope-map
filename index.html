@@ -19,8 +19,11 @@ header{padding:10px 12px 8px;background:var(--card);border-bottom:1px solid var(
 .btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 12px;font-size:14px;cursor:pointer;white-space:nowrap}
 .btn.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
 .search{display:flex;gap:8px;margin-top:8px}
-.search input{flex:1;min-width:0;font-size:20px;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);outline:none}
+.search .qw{flex:1;min-width:0;position:relative;display:flex}
+.search input{flex:1;min-width:0;padding-right:40px!important;font-size:20px;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);outline:none}
 .search input:focus{border-color:var(--acc)}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+#qx{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border:0;border-radius:50%;background:var(--line);color:var(--ink);font-size:15px;line-height:30px;padding:0;cursor:pointer;display:none}
 #results{max-height:34vh;overflow:auto;background:var(--card);border-bottom:1px solid var(--line);display:none}
 .r{padding:10px 14px;border-top:1px solid var(--line);cursor:pointer}
 .r:active,.r:hover{background:var(--acc2)}
@@ -28,8 +31,13 @@ header{padding:10px 12px 8px;background:var(--card);border-bottom:1px solid var(
 .note{padding:10px 14px;color:var(--mute);font-size:13px}
 #map{flex:1;min-height:200px;background:#e9ece8}
 @media (prefers-color-scheme:dark){#map{background:#202624}}
-#detail{background:var(--card);border-top:1px solid var(--line);padding:12px 14px;max-height:42vh;overflow:auto;display:none}
-#detail h3{margin:0 0 4px;font-size:18px}
+#detail{background:var(--card);border-top:1px solid var(--line);max-height:42vh;overflow:auto;display:none}
+#detail .dh{position:sticky;top:0;background:var(--card);display:flex;align-items:center;gap:6px;padding:10px 10px 6px 14px;cursor:pointer;z-index:1}
+#detail .dh h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#detail .ib{border:0;background:var(--bg);color:var(--ink);border-radius:50%;width:34px;height:34px;font-size:16px;line-height:34px;text-align:center;cursor:pointer;flex:none;padding:0}
+#detail .db{padding:0 14px 12px}
+#detail.min .db{display:none}
+#detail h3{font-size:18px}
 #detail .meta{color:var(--mute);font-size:12px;margin-bottom:8px}
 #detail table{border-collapse:collapse;width:100%;font-size:14px;margin:6px 0}
 #detail td{border-top:1px solid var(--line);padding:5px 4px;vertical-align:top}
@@ -48,9 +56,9 @@ a.btn{text-decoration:none;display:inline-block}
 .acl .em{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .acl select,.acl button{font-size:13px;padding:5px 8px}
 .acl .tag{color:var(--mute);font-size:12px}
-.locbtn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:#fff;cursor:pointer}
-.locbtn svg{width:20px;height:20px}
-.locbtn.on svg{color:#1a73e8}
+.leaflet-bar a.locbtn{display:flex!important;align-items:center;justify-content:center;padding:0;background:#fff;cursor:pointer;color:#222}
+.leaflet-bar a.locbtn svg{width:20px;height:20px;display:block}
+.leaflet-bar a.locbtn.on{color:#1a73e8}
 .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:500;pointer-events:none}
 .empty div{background:var(--card);padding:16px 18px;border-radius:14px;max-width:300px;text-align:center;font-size:14px;line-height:1.6;pointer-events:auto;box-shadow:0 2px 12px rgba(0,0,0,.12)}
 .leaflet-tooltip.lbl{background:transparent;border:0;box-shadow:none;color:var(--ink);font-size:11px;font-weight:600;padding:0;text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
@@ -65,7 +73,7 @@ a.btn{text-decoration:none;display:inline-block}
     <button class="btn" id="acct" style="display:none" title="登出">登出</button>
   </div>
   <form class="search" id="sf">
-    <input id="q" type="search" inputmode="search" placeholder="輸入編號，例如 NO035 或序號 310" autocomplete="off">
+    <div class="qw"><input id="q" type="search" inputmode="search" placeholder="輸入編號，例如 NO035 或序號 310" autocomplete="off"><button type="button" id="qx" aria-label="清除">✕</button></div>
     <button class="btn pri" type="submit">定位</button>
   </form>
 </header>
@@ -105,7 +113,7 @@ a.btn{text-decoration:none;display:inline-block}
   </div>
 </div>
 
-<script src="config.js?v=20261112b"></script>
+<script src="config.js?v=20261112c"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -222,6 +230,7 @@ map.on('click',e=>{
 
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
+let detailMin=false;
 function select(i,fly=true){
   const p=DATA.points[i];
   if(hiLayer) map.removeLayer(hiLayer);
@@ -232,13 +241,18 @@ function select(i,fly=true){
   if(fly) goTo(p.c,Math.max(map.getZoom(),17));
   const rows=Object.entries(p.f||{}).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
   const ll=p.c[0].toFixed(6)+','+p.c[1].toFixed(6);
-  $('detail').innerHTML=`<h3>${esc(p.n)}</h3><div class="meta">${esc(p.l)}・${ll}</div>`+
+  $('detail').innerHTML=`<div class="dh" id="dh"><h3>${esc(p.n)}</h3><button class="ib" id="dmin" aria-label="收合">${detailMin?'▴':'▾'}</button><button class="ib" id="dclose" aria-label="關閉">✕</button></div><div class="db"><div class="meta">${esc(p.l)}・${ll}</div>`+
     (p.d?`<div class="desc">${esc(p.d)}</div>`:'')+(rows?`<table>${rows}</table>`:'')+
     `<div class="row"><a class="btn pri" href="https://www.google.com/maps/search/?api=1&query=${ll}" target="_blank" rel="noopener">在 Google 地圖開啟</a>`+
     `<a class="btn pri" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${ll}" target="_blank" rel="noopener">街景</a>`+
     `<a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${ll}" target="_blank" rel="noopener">導航</a>`+
-    `<button class="btn" id="cpy">複製座標</button></div>`;
+    `<button class="btn" id="cpy">複製座標</button></div></div>`;
   $('detail').style.display='block';
+  $('detail').classList.toggle('min',detailMin);
+  const tog=()=>{detailMin=!detailMin;$('detail').classList.toggle('min',detailMin);$('dmin').textContent=detailMin?'▴':'▾';$('detail').scrollTop=0;setTimeout(()=>map.invalidateSize(),50)};
+  $('dh').onclick=e=>{if(e.target.id!=='dclose')tog()};
+  $('dmin').onclick=e=>{e.stopPropagation();tog()};
+  $('dclose').onclick=e=>{e.stopPropagation();$('detail').style.display='none';if(hiLayer){map.removeLayer(hiLayer);hiLayer=null}setTimeout(()=>map.invalidateSize(),50)};
   const cb=$('cpy'); cb.onclick=()=>{try{navigator.clipboard.writeText(ll).then(()=>cb.textContent='已複製',()=>cb.textContent=ll)}catch(e){cb.textContent=ll}};
   setTimeout(()=>map.invalidateSize(),50);
 }
@@ -280,6 +294,9 @@ $('sf').addEventListener('submit',e=>{
   if(res.exact&&res.exact.length===1){select(res.exact[0][0]);$('results').style.display='none';$('q').blur()}
   else showResults(res,q);
 });
+const syncQx=()=>{$('qx').style.display=$('q').value?'block':'none'};
+$('qx').onclick=()=>{$('q').value='';syncQx();$('results').style.display='none';$('q').focus()};
+$('q').addEventListener('input',syncQx);
 $('q').addEventListener('input',()=>{const q=$('q').value; if(!q.trim()){$('results').style.display='none';return} showResults(search(q),q)});
 
 // ---------- KML parsing ----------
