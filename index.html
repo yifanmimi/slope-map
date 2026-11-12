@@ -57,7 +57,7 @@ a.btn{text-decoration:none;display:inline-block}
     <button class="btn" id="openUpload">載入檔案</button>
   </div>
   <form class="search" id="sf">
-    <input id="q" type="search" inputmode="search" placeholder="輸入編號，例如 125" autocomplete="off">
+    <input id="q" type="search" inputmode="search" placeholder="輸入編號，例如 NO035 或序號 310" autocomplete="off">
     <button class="btn pri" type="submit">定位</button>
   </form>
 </header>
@@ -125,7 +125,7 @@ function render(){
   const layers=[...new Set(DATA.points.map(p=>p.l))];
   const bounds=[];
   DATA.points.forEach((p,i)=>{
-    const col=PALETTE[layers.indexOf(p.l)%PALETTE.length];
+    const col=p.s||PALETTE[layers.indexOf(p.l)%PALETTE.length];
     let m;
     if(p.g==='line'&&p.k) m=L.polyline(p.k,{color:col,weight:3});
     else if(p.g==='poly'&&p.k) m=L.polygon(p.k,{color:col,weight:2,fillOpacity:.15});
@@ -146,6 +146,7 @@ function updateLabels(){
   let n=0;
   for(const p of DATA.points){
     if(!b.contains(p.c)) continue;
+    if(p.n==='(未命名)') continue;
     if(++n>300) break;
     L.tooltip({permanent:true,direction:'right',className:'lbl',offset:[6,0]}).setLatLng(p.c).setContent(esc(p.n)).addTo(labelLayer);
   }
@@ -181,23 +182,18 @@ function select(i,fly=true){
 
 // ---------- search ----------
 function norm(s){return String(s??'').replace(/[！-～]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/　/g,' ').trim().toUpperCase()}
-const IDKEY=/編號|序號|號碼|編碼|代碼|^ID$|^NO\.?$|NUMBER|樁號/i;
-function digitGroups(s){return (norm(s).match(/\d+/g)||[]).map(x=>x.replace(/^0+(?=\d)/,''))}
+const IDKEY=/編號|序號|號碼|編碼|代碼|^ID$|ID$|^NO|NAME$|^SNUM$|^IDNO$|SN碼|樁號|^POS/i;
+function strip0(v){return v.replace(/^[A-Z]*-?/,'').replace(/^0+(?=\d)/,'')}
 function search(qRaw){
-  const q=norm(qRaw); if(!q||!DATA) return [];
-  const qd=/^\d+$/.test(q)?q.replace(/^0+(?=\d)/,''):null;
+  const q=norm(qRaw); if(!q||!DATA) return {exact:[],part:[]};
+  const qs=strip0(q);
   const exact=[],part=[];
   DATA.points.forEach((p,i)=>{
-    const name=norm(p.n);
-    const idVals=Object.entries(p.f||{}).filter(([k])=>IDKEY.test(k)).map(([,v])=>norm(v));
-    let hit=false;
-    if(name===q||idVals.includes(q)) hit=true;
-    else if(qd!==null){
-      if(digitGroups(p.n).includes(qd)) hit=true;
-      else if(idVals.some(v=>digitGroups(v).includes(qd)&&v.replace(/\D/g,'').replace(/^0+(?=\d)/,'')===qd)) hit=true;
-    }
-    if(hit) exact.push(i);
-    else if(name.includes(q)||idVals.some(v=>v.includes(q))||(q.length>=2&&Object.values(p.f||{}).some(v=>norm(v).includes(q)))) part.push(i);
+    const vals=[['名稱',p.n],...Object.entries(p.f||{}).filter(([k])=>IDKEY.test(k))].map(([k,v])=>[k,norm(v)]).filter(([,v])=>v);
+    let hit=null;
+    for(const [k,v] of vals){ if(v===q||(qs&&/\d/.test(qs)&&strip0(v)===qs)){hit=k;break} }
+    if(hit){exact.push([i,hit]);return}
+    if(q.length>=2&&(vals.some(([,v])=>v.includes(q))||Object.values(p.f||{}).some(v=>norm(v).includes(q)))) part.push([i,'']);
   });
   return {exact,part};
 }
@@ -207,9 +203,10 @@ function showResults(res,q){
   const {exact,part}=res; let h='';
   if(!exact.length&&!part.length) h=`<div class="note">找不到「${esc(q)}」</div>`;
   else{
-    const item=(i,tag)=>{const p=DATA.points[i];return `<div class="r" data-i="${i}"><b>${esc(p.n)}</b><span>${esc(p.l)}${tag?'・'+tag:''}</span></div>`};
-    h=exact.map(i=>item(i,'')).join('');
-    if(part.length) h+=`<div class="note">部分符合（${part.length}）</div>`+part.slice(0,50).map(i=>item(i,'')).join('');
+    const item=([i,tag])=>{const p=DATA.points[i];const tv=tag&&tag!=='名稱'?tag+' '+(p.f[tag]||''):'';return `<div class="r" data-i="${i}"><b>${esc(p.n)}</b><span>${esc(p.l)}${tv?'・'+esc(tv):''}</span></div>`};
+    h=`<div class="note">符合 ${exact.length} 筆</div>`+exact.slice(0,100).map(item).join('');
+    if(!exact.length) h='';
+    if(part.length) h+=`<div class="note">部分符合（${part.length}）</div>`+part.slice(0,50).map(item).join('');
   }
   box.innerHTML=h; box.style.display='block';
   box.querySelectorAll('.r').forEach(el=>el.onclick=()=>{select(+el.dataset.i);box.style.display='none';$('q').blur()});
@@ -217,7 +214,7 @@ function showResults(res,q){
 $('sf').addEventListener('submit',e=>{
   e.preventDefault(); const q=$('q').value; const res=search(q);
   if(!DATA){return}
-  if(res.exact&&res.exact.length===1){select(res.exact[0]);$('results').style.display='none';$('q').blur()}
+  if(res.exact&&res.exact.length===1){select(res.exact[0][0]);$('results').style.display='none';$('q').blur()}
   else showResults(res,q);
 });
 $('q').addEventListener('input',()=>{const q=$('q').value; if(!q.trim()){$('results').style.display='none';return} showResults(search(q),q)});
@@ -227,6 +224,7 @@ function txt(el,tag){const x=el.getElementsByTagName(tag)[0];return x?x.textCont
 function stripHtml(s){if(!s)return'';const d=new DOMParser().parseFromString('<div>'+s.replace(/<br\s*\/?>/gi,'\n')+'</div>','text/html');return (d.body.textContent||'').replace(/\n{3,}/g,'\n\n').trim()}
 function coordsOf(s){return s.trim().split(/\s+/).map(t=>t.split(',').map(Number)).filter(a=>a.length>=2&&isFinite(a[0])&&isFinite(a[1])).map(a=>[+a[1].toFixed(6),+a[0].toFixed(6)])}
 function thin(arr,max){if(arr.length<=max)return arr;const step=arr.length/max,out=[];for(let i=0;i<max;i++)out.push(arr[Math.floor(i*step)]);out.push(arr[arr.length-1]);return out}
+const NAMEKEYS=['NoName','ASName','NEW NAME','POS_1','NoID','NOID','IDNo','序號'];
 function parseKML(text){
   const xml=new DOMParser().parseFromString(text,'application/xml');
   if(xml.getElementsByTagName('parsererror').length) throw new Error('KML 檔案格式讀不懂');
@@ -240,7 +238,7 @@ function parseKML(text){
     let par=pm.parentElement;
     while(par){if(par.localName==='Folder'){for(const c of par.children){if(c.localName==='name'){layer=c.textContent.trim();break}}break}par=par.parentElement}
     const f={};
-    for(const d of pm.getElementsByTagName('Data')){const k=d.getAttribute('name');const v=txt(d,'value');if(k&&!/^gx_media_links$/i.test(k))f[k]=v.slice(0,300)}
+    for(const d of pm.getElementsByTagName('Data')){const k=(d.getAttribute('name')||'').replace(/\uFFFD/g,'').trim();const v=txt(d,'value');if(k&&!/^gx_media_links$/i.test(k))f[k]=v.slice(0,300)}
     for(const d of pm.getElementsByTagName('SimpleData')){const k=d.getAttribute('name');if(k)f[k]=d.textContent.trim().slice(0,300)}
     let desc=stripHtml(txt(pm,'description'));
     // My Maps puts "key: value" lines in description too; drop duplicates of ExtendedData
@@ -252,7 +250,10 @@ function parseKML(text){
     else if(pg){const ob=pg.getElementsByTagName('outerBoundaryIs')[0]||pg;k=thin(coordsOf(txt(ob,'coordinates')),150);g='poly';
       if(k.length){let a=0,b=0;k.forEach(q=>{a+=q[0];b+=q[1]});c=[+(a/k.length).toFixed(6),+(b/k.length).toFixed(6)]}}
     if(!c) continue;
-    const o={n:txt(pm,'name')||'(未命名)',l:layer||'圖層',c,g};
+    let nm=txt(pm,'name');
+    if(!nm){for(const key of NAMEKEYS){if(f[key]){nm=key==='POS_1'&&f.IDNo?f.IDNo+'-'+f[key]:f[key];break}}}
+    const o={n:nm||'(未命名)',l:layer||'圖層',c,g};
+    const sm=(txt(pm,'styleUrl').match(/-([0-9A-F]{6})-/i)||[])[1]; if(sm)o.s='#'+sm;
     if(k&&g!=='pt')o.k=k;
     if(desc)o.d=desc.slice(0,500);
     if(Object.keys(f).length)o.f=f;
@@ -300,7 +301,7 @@ async function fetchFirst(){
   return null;
 }
 async function loadShared(){
-  $('mapInfo').textContent='載入中⋯';
+  $('mapInfo').textContent='下載圖資中⋯';
   const got=await fetchFirst();
   if(!got){DATA=null;render();$('mapInfo').textContent='找不到 map.kml';return}
   try{const parsed=parseKML(got.text);DATA={name:parsed.name,updatedAt:got.mod||null,points:parsed.points};render()}
