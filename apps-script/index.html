@@ -280,9 +280,10 @@ function parseKML(text){
     const f={};
     for(const d of pm.getElementsByTagName('Data')){const k=(d.getAttribute('name')||'').replace(/\uFFFD/g,'').trim();const v=txt(d,'value');if(k&&!/^gx_media_links$/i.test(k))f[k]=v.slice(0,300)}
     for(const d of pm.getElementsByTagName('SimpleData')){const k=d.getAttribute('name');if(k)f[k]=d.textContent.trim().slice(0,300)}
-    let desc=stripHtml(txt(pm,'description'));
+    let desc=stripHtml(txt(pm,'description')).replace(/\uFFFD/g,'');
     // My Maps puts "key: value" lines in description too; drop duplicates of ExtendedData
     if(Object.keys(f).length){desc=desc.split('\n').filter(line=>{const m=line.match(/^([^:：]+)[:：]\s*(.*)$/);return !(m&&f[m[1].trim()]!==undefined)}).join('\n').trim()}
+    for(const k of Object.keys(f)){const v=String(f[k]).replace(/\uFFFD/g,'');f[k]=v}
     let g='pt',c=null,k=null;
     const pt=pm.getElementsByTagName('Point')[0], ls=pm.getElementsByTagName('LineString')[0], pg=pm.getElementsByTagName('Polygon')[0];
     if(pt){c=coordsOf(txt(pt,'coordinates'))[0]}
@@ -290,7 +291,7 @@ function parseKML(text){
     else if(pg){const ob=pg.getElementsByTagName('outerBoundaryIs')[0]||pg;k=thin(coordsOf(txt(ob,'coordinates')),150);g='poly';
       if(k.length){let a=0,b=0;k.forEach(q=>{a+=q[0];b+=q[1]});c=[+(a/k.length).toFixed(6),+(b/k.length).toFixed(6)]}}
     if(!c) continue;
-    let nm=txt(pm,'name');
+    let nm=txt(pm,'name').replace(/\uFFFD/g,'');
     if(!nm){for(const key of NAMEKEYS){if(f[key]){nm=key==='POS_1'&&f.IDNo?f.IDNo+'-'+f[key]:f[key];break}}}
     const o={n:nm||'(未命名)',l:layer||'圖層',c,g};
     const sm=(txt(pm,'styleUrl').match(/-([0-9A-F]{6})-/i)||[])[1]; if(sm)o.s='#'+sm;
