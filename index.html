@@ -126,7 +126,7 @@ a.btn{text-decoration:none;display:inline-block}
   </div>
 </div>
 
-<script src="config.js?v=20261112j"></script>
+<script src="config.js?v=20261112k"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -146,7 +146,9 @@ let db=null, canWrite=null;
 const LS_KEY='slope-map-local-v1';
 
 // ---------- map ----------
-const map=L.map('map',{zoomControl:true,preferCanvas:true,maxZoom:20}).setView([24.99,121.57],13);
+// 全部向量圖層共用同一張畫布；多張畫布疊在一起時，上面那張會擋住下面的點擊
+const vecR=L.canvas({tolerance:6});
+const map=L.map('map',{zoomControl:true,renderer:vecR,maxZoom:20}).setView([24.99,121.57],13);
 const nlsc=(id,ext)=>L.tileLayer('https://wmts.nlsc.gov.tw/wmts/'+id+'/default/GoogleMapsCompatible/{z}/{y}/{x}',Object.assign({maxZoom:20,maxNativeZoom:19,attribution:'國土測繪中心'},ext||{}));
 const bases={
   '國土測繪 電子地圖':nlsc('EMAP'),
@@ -171,8 +173,7 @@ function addGoogleLayers(g){
 function goTo(ll,z){ if(map._animatingZoom){map.once('zoomend',()=>goTo(ll,z));return} map.setView(ll,z); }
 map.attributionControl.setPrefix(false);
 // 圖層順序：面、線在下，點在上，選取標記最上
-// 同一張畫布，先畫面和線、再畫點，點擊時會先選到上層的點
-const vecR=L.canvas({tolerance:6});
+// 先畫面和線、再畫點，點擊時會先選到上層的點
 map.createPane('hi').style.zIndex=640;
 map.getPane('hi').style.pointerEvents='none';
 // ---------- 現在位置 ----------
@@ -189,8 +190,8 @@ const LocCtl=L.Control.extend({options:{position:'topleft'},onAdd(){
   return d;}});
 map.addControl(new LocCtl());
 map.on('locationfound',e=>{
-  if(!me){me=L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).addTo(map);
-    meAcc=L.circle(e.latlng,{radius:e.accuracy,color:'#1a73e8',weight:1,fillOpacity:.1,interactive:false}).addTo(map)}
+  if(!me){me=L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1,pane:'hi',interactive:false}).addTo(map);
+    meAcc=L.circle(e.latlng,{radius:e.accuracy,color:'#1a73e8',weight:1,fillOpacity:.1,interactive:false,pane:'hi'}).addTo(map)}
   else{me.setLatLng(e.latlng);meAcc.setLatLng(e.latlng).setRadius(e.accuracy)}
   me.bindTooltip('我的位置（誤差約 '+Math.round(e.accuracy)+' 公尺）');
   if(!firstFix){firstFix=true;goTo(e.latlng,Math.max(map.getZoom(),17))}
