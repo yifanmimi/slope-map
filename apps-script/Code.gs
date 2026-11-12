@@ -2,10 +2,11 @@
  * 邊坡圖資編號查詢：後台 API（Google Apps Script）
  * 前台在 GitHub Pages，使用者用 Google 帳號登入，前台把登入憑證送來這裡驗證。
  *
- * 權限：看「邊坡圖資資料.json」在雲端硬碟的共用設定
- *   - 共用為檢視者／留言者 → 可以查詢
- *   - 共用為編輯者（或擁有者）→ 可以更換圖資
- *   - 其他帳號 → 拒絕
+ * 權限：看試算表「邊坡圖資權限」（第一次使用自動建立）
+ *   - A 欄帳號、B 欄「查看」或「編輯」、C 欄備註
+ *   - 查看 → 可以查詢；編輯 → 可以更換圖資、管理權限
+ *   - 部署者本人永遠是編輯；不在表上的帳號 → 拒絕
+ *   - 也可以在網頁的「權限管理」直接新增、修改、刪除
  *
  * 部署：執行身分「我」，存取權「所有人」
  * 指令碼屬性：CLIENT_ID（必填）、GOOGLE_MAPS_KEY（選填，Google 底圖用）
@@ -26,6 +27,7 @@ function setup() {
     props.setProperty('SOURCE', DEFAULT_SOURCE);
   }
   Logger.log('圖資檔：' + DriveApp.getFileById(id).getUrl());
+  Logger.log('權限表：' + aclSheet_().getParent().getUrl());
   if (!props.getProperty('CLIENT_ID')) Logger.log('還沒設定指令碼屬性 CLIENT_ID');
 }
 
@@ -44,6 +46,9 @@ function doPost(e) {
       case 'get': return json_(getData_(email, role));
       case 'save': needEdit(); return json_(saveData_(req.data));
       case 'fetchMyMaps': needEdit(); return json_({ kml: fetchMyMaps_(req.url) });
+      case 'aclList': needEdit(); return json_(aclList_());
+      case 'aclSet': needEdit(); if (String(req.email).toLowerCase() === email && req.role !== 'edit') throw new Error('不能降低自己的權限。'); return json_(aclSet_(req.email, req.role, req.note));
+      case 'aclRemove': needEdit(); return json_(aclRemove_(req.email, email));
       default: throw new Error('未知的動作');
     }
   } catch (err) {
@@ -82,25 +87,90 @@ function file_() {
   return DriveApp.getFileById(props.getProperty('FILE_ID'));
 }
 
-/** 依雲端硬碟共用名單判斷權限（快取 5 分鐘） */
-function role_(email) {
-  let lists = cache.get('acl');
-  if (lists) lists = JSON.parse(lists);
-  else {
-    const f = file_();
-    const em = u => String(u.getEmail()).toLowerCase();
-    const edit = f.getEditors().map(em);
-    try { edit.push(em(f.getOwner())); } catch (e) {}
-    lists = { edit: edit, view: f.getViewers().map(em) };
-    cache.put('acl', JSON.stringify(lists), 300);
+const ACL_NAME = '邊坡圖資權限';
+const ROLE_LABEL = { view: '查看', edit: '編輯' };
+
+function owner_() { return String(Session.getEffectiveUser().getEmail()).toLowerCase(); }
+
+/** 權限試算表（沒有就建立） */
+function aclSheet_() {
+  let id = props.getProperty('ACL_ID');
+  if (id) {
+    try { return SpreadsheetApp.openById(id).getSheets()[0]; } catch (e) {}
   }
-  if (lists.edit.indexOf(email) >= 0) return 'edit';
-  if (lists.view.indexOf(email) >= 0) return 'view';
-  return null;
+  const ss = SpreadsheetApp.create(ACL_NAME);
+  const sh = ss.getSheets()[0];
+  sh.setName('權限');
+  sh.getRange(1, 1, 1, 3).setValues([['帳號', '權限', '備註']]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(1, 260); sh.setColumnWidth(3, 240);
+  sh.getRange('B2:B').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['查看', '編輯'], true).build());
+  sh.appendRow([owner_(), '編輯', '擁有者']);
+  props.setProperty('ACL_ID', ss.getId());
+  return sh;
 }
 
-/** 改完共用名單想立刻生效，可在編輯器執行這個 */
-function clearAccessCache() { cache.remove('acl'); }
+/** 讀出全部權限（快取 5 分鐘） */
+function aclRows_() {
+  const hit = cache.get('acl2');
+  if (hit) return JSON.parse(hit);
+  const sh = aclSheet_();
+  const n = sh.getLastRow() - 1;
+  const rows = n > 0 ? sh.getRange(2, 1, n, 3).getValues() : [];
+  const out = rows
+    .map(r => ({ email: String(r[0]).trim().toLowerCase(), role: String(r[1]).trim() === '編輯' ? 'edit' : (String(r[1]).trim() === '查看' ? 'view' : ''), note: String(r[2] || '') }))
+    .filter(r => r.email && r.role);
+  cache.put('acl2', JSON.stringify(out), 300);
+  return out;
+}
+
+function role_(email) {
+  if (email === owner_()) return 'edit';
+  const r = aclRows_().find(x => x.email === email);
+  return r ? r.role : null;
+}
+
+function aclList_() {
+  const sh = aclSheet_();
+  return { owner: owner_(), rows: aclRows_(), sheetUrl: sh.getParent().getUrl() };
+}
+
+function aclSet_(email, role, note) {
+  email = String(email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('帳號格式不對，請輸入完整的 email。');
+  if (role !== 'view' && role !== 'edit') throw new Error('權限只能是查看或編輯。');
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const sh = aclSheet_();
+    const n = sh.getLastRow() - 1;
+    const emails = n > 0 ? sh.getRange(2, 1, n, 1).getValues().map(r => String(r[0]).trim().toLowerCase()) : [];
+    const i = emails.indexOf(email);
+    if (i >= 0) {
+      sh.getRange(i + 2, 2).setValue(ROLE_LABEL[role]);
+      if (note !== undefined) sh.getRange(i + 2, 3).setValue(note);
+    } else {
+      sh.appendRow([email, ROLE_LABEL[role], note || '']);
+    }
+  } finally { lock.releaseLock(); cache.remove('acl2'); }
+  return aclList_();
+}
+
+function aclRemove_(email, me) {
+  email = String(email || '').trim().toLowerCase();
+  if (email === owner_()) throw new Error('擁有者不能移除。');
+  if (email === me) throw new Error('不能移除自己的權限。');
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const sh = aclSheet_();
+    const n = sh.getLastRow() - 1;
+    const emails = n > 0 ? sh.getRange(2, 1, n, 1).getValues().map(r => String(r[0]).trim().toLowerCase()) : [];
+    for (let i = emails.length - 1; i >= 0; i--) if (emails[i] === email) sh.deleteRow(i + 2);
+  } finally { lock.releaseLock(); cache.remove('acl2'); }
+  return aclList_();
+}
+
+/** 在試算表手動改完想立刻生效，可在編輯器執行這個 */
+function clearAccessCache() { cache.remove('acl2'); }
 
 function getData_(email, role) {
   const f = file_();

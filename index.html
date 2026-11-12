@@ -44,6 +44,10 @@ a.btn{text-decoration:none;display:inline-block}
 .panel p{font-size:14px;line-height:1.6;margin:8px 0}
 #msg{font-size:14px;margin-top:8px;min-height:1.2em}
 .leaflet-control-layers{font-size:14px}
+.acl{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.acl .em{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acl select,.acl button{font-size:13px;padding:5px 8px}
+.acl .tag{color:var(--mute);font-size:12px}
 .locbtn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:#fff;cursor:pointer}
 .locbtn svg{width:20px;height:20px}
 .locbtn.on svg{color:#1a73e8}
@@ -57,7 +61,7 @@ a.btn{text-decoration:none;display:inline-block}
 <header>
   <div class="top">
     <div class="title"><b id="mapName">邊坡圖資編號查詢</b><small id="mapInfo">載入中⋯</small></div>
-    <button class="btn" id="openUpload" style="display:none">更換圖資</button>
+    <button class="btn" id="openUpload" style="display:none">管理</button>
     <button class="btn" id="acct" style="display:none" title="登出">登出</button>
   </div>
   <form class="search" id="sf">
@@ -88,11 +92,20 @@ a.btn{text-decoration:none;display:inline-block}
     <p style="margin-top:16px"><b>方法二：上傳 KML / KMZ 檔</b><br>我的地圖（電腦版）→ 地圖名稱旁「⋮」→「匯出至 KML/KMZ」，選整份地圖，不要勾「保持資料在最新狀態」。</p>
     <input type="file" id="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz">
     <div id="msg"></div>
+    <h2 style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line)">權限管理</h2>
+    <p style="color:var(--mute);font-size:13px;margin-top:0">查看＝可以查詢；編輯＝可以換圖和管理權限。名單同步存在試算表 <a id="aclSheet" href="#" target="_blank" rel="noopener">邊坡圖資權限</a>。</p>
+    <div id="aclList" style="font-size:14px"></div>
+    <form id="aclAdd" class="row" style="align-items:center">
+      <input id="aclEmail" type="email" placeholder="輸入 Gmail 帳號" required style="flex:1;min-width:160px;font-size:15px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+      <select id="aclRole" class="btn"><option value="view">查看</option><option value="edit">編輯</option></select>
+      <button class="btn pri" type="submit">新增</button>
+    </form>
+    <div id="aclMsg" style="font-size:13px;min-height:1.2em;margin-top:6px"></div>
     <div class="row"><button class="btn" id="closeUpload">關閉</button></div>
   </div>
 </div>
 
-<script src="config.js?v=20261112"></script>
+<script src="config.js?v=20261112b"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -372,7 +385,37 @@ $('syncBtn').onclick=async()=>{
   try{const r=await api('fetchMyMaps',{url:$('src').value.trim()}); await saveParsed(parseKML(r.kml))}
   catch(err){msg.style.color='var(--hi)';msg.textContent=errText(err)}
 };
-$('openUpload').onclick=()=>{$('msg').textContent='';$('ov').style.display='flex'};
+$('openUpload').onclick=()=>{$('msg').textContent='';$('aclMsg').textContent='';$('ov').style.display='flex';loadAcl()};
+let ME='';
+function aclRender(r){
+  $('aclSheet').href=r.sheetUrl||'#';
+  const rows=[{email:r.owner,role:'edit',owner:true},...r.rows.filter(x=>x.email!==r.owner)];
+  $('aclList').innerHTML=rows.map(x=>{
+    const self=x.email===ME;
+    const lock=x.owner||self;
+    return `<div class="acl" data-e="${esc(x.email)}"><span class="em" title="${esc(x.email)}">${esc(x.email)}${x.owner?' <span class="tag">擁有者</span>':self?' <span class="tag">你</span>':''}</span>`+
+      (lock?`<span class="tag">編輯</span>`:`<select class="btn"><option value="view"${x.role==='view'?' selected':''}>查看</option><option value="edit"${x.role==='edit'?' selected':''}>編輯</option></select><button class="btn" type="button">移除</button>`)+`</div>`;
+  }).join('');
+  $('aclList').querySelectorAll('.acl').forEach(el=>{
+    const e=el.dataset.e, sel=el.querySelector('select'), del=el.querySelector('button');
+    if(sel) sel.onchange=()=>aclDo('aclSet',{email:e,role:sel.value},`已將 ${e} 改為${sel.value==='edit'?'編輯':'查看'}`);
+    if(del) del.onclick=()=>{
+      if(del.dataset.c){aclDo('aclRemove',{email:e},`已移除 ${e}`)}
+      else{del.dataset.c='1';del.textContent='確定移除？';del.style.color='var(--hi)';setTimeout(()=>{if(del.isConnected){delete del.dataset.c;del.textContent='移除';del.style.color=''}},3000)}
+    };
+  });
+}
+async function loadAcl(){
+  $('aclList').innerHTML='<div class="note" style="padding:6px 0">讀取中⋯</div>';
+  try{aclRender(await api('aclList'))}catch(err){$('aclList').innerHTML='';$('aclMsg').textContent=errText(err)}
+}
+async function aclDo(action,extra,okText){
+  const m=$('aclMsg');m.style.color='';m.textContent='儲存中⋯';
+  try{aclRender(await api(action,extra));m.textContent=okText+'，最多 5 分鐘內生效。'}
+  catch(err){m.style.color='var(--hi)';m.textContent=errText(err);loadAcl()}
+}
+$('aclAdd').addEventListener('submit',e=>{e.preventDefault();const em=$('aclEmail').value.trim();if(!em)return;
+  aclDo('aclSet',{email:em,role:$('aclRole').value},`已新增 ${em}`).then(()=>{$('aclEmail').value=''})});
 $('closeUpload').onclick=()=>{$('ov').style.display='none'};
 $('ov').addEventListener('click',e=>{if(e.target===$('ov'))$('ov').style.display='none'});
 
@@ -382,7 +425,7 @@ async function boot(){
   $('mapInfo').textContent='下載圖資中⋯';
   try{
     const r=await api('get');
-    $('acct').style.display=''; $('acct').title=r.email+'（按此登出）';
+    $('acct').style.display=''; $('acct').title=r.email+'（按此登出）'; ME=r.email;
     if(!googleAdded){googleAdded=true;try{addGoogleLayers(r.google)}catch(e){}}
     if(r.canEdit){$('openUpload').style.display='';$('src').value=r.source||''}
     DATA=null;
