@@ -129,7 +129,7 @@ a.btn{text-decoration:none;display:inline-block}
   </div>
 </div>
 
-<script src="config.js?v=20261112g"></script>
+<script src="config.js?v=20261112i"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -167,6 +167,11 @@ function addGoogleLayers(g){
 // 縮放動畫中呼叫 setView 會被 Leaflet 忽略，等動畫結束再跳
 function goTo(ll,z){ if(map._animatingZoom){map.once('zoomend',()=>goTo(ll,z));return} map.setView(ll,z); }
 map.attributionControl.setPrefix(false);
+// 圖層順序：面、線在下，點在上，選取標記最上
+// 同一張畫布，先畫面和線、再畫點，點擊時會先選到上層的點
+const vecR=L.canvas({tolerance:6});
+map.createPane('hi').style.zIndex=640;
+map.getPane('hi').style.pointerEvents='none';
 // ---------- 現在位置 ----------
 let me=null, meAcc=null, following=false, firstFix=false;
 const LocCtl=L.Control.extend({options:{position:'topleft'},onAdd(){
@@ -197,6 +202,12 @@ const ACC=()=>css.getPropertyValue('--acc').trim()||'#1f6f5c';
 const HI=()=>css.getPropertyValue('--hi').trim()||'#d9480f';
 const PALETTE=['#1f6f5c','#2b6cb0','#9c4221','#6b46c1','#b7791f','#2c7a7b','#c53030','#4a5568','#2f855a','#975a16'];
 
+// 點擊時找最近的點（24px 內），點優先於面和線
+function nearestPt(cp){
+  let best=-1,bd=24*24;
+  DATA.points.forEach((p,i)=>{if(p.g!=='pt')return;const q=map.latLngToContainerPoint(p.c);const d=(q.x-cp.x)**2+(q.y-cp.y)**2;if(d<bd){bd=d;best=i}});
+  return best;
+}
 function render(){
   layerAll.clearLayers(); markers=[]; if(hiLayer){map.removeLayer(hiLayer);hiLayer=null}
   $('detail').style.display='none';
@@ -213,13 +224,14 @@ function render(){
   $('mapInfo').textContent=DATA.points.length+' 筆'+(d?'・更新於 '+d.toLocaleDateString('zh-TW'):'')+(DATA.local?'・僅存在這台裝置':'');
   const layers=[...new Set(DATA.points.map(p=>p.l))];
   const bounds=[];
-  DATA.points.forEach((p,i)=>{
+  const order=DATA.points.map((p,i)=>i).sort((a,b)=>(DATA.points[a].g==='pt')-(DATA.points[b].g==='pt'));
+  order.forEach(i=>{const p=DATA.points[i];
     const col=p.s||PALETTE[layers.indexOf(p.l)%PALETTE.length];
     let m;
-    if(p.g==='line'&&p.k) m=L.polyline(p.k,{color:col,weight:3});
-    else if(p.g==='poly'&&p.k) m=L.polygon(p.k,{color:col,weight:2,fillOpacity:.15});
-    else m=L.circleMarker(p.c,{radius:5,color:'#fff',weight:1,fillColor:col,fillOpacity:.95});
-    m.on('click',ev=>{L.DomEvent.stopPropagation(ev);select(i,false)});
+    if(p.g==='line'&&p.k) m=L.polyline(p.k,{color:col,weight:3,renderer:vecR});
+    else if(p.g==='poly'&&p.k) m=L.polygon(p.k,{color:col,weight:2,fillOpacity:.15,renderer:vecR});
+    else m=L.circleMarker(p.c,{radius:6,color:'#fff',weight:1.5,fillColor:col,fillOpacity:.95,renderer:vecR});
+    m.on('click',ev=>{L.DomEvent.stopPropagation(ev);const n=nearestPt(ev.containerPoint);select(n>=0?n:i,false)});
     m.addTo(layerAll); markers.push(m); bounds.push(p.c);
   });
   if(bounds.length) map.fitBounds(bounds,{padding:[20,20],animate:false});
@@ -253,8 +265,8 @@ function select(i,fly=true){
   const p=DATA.points[i];
   if(hiLayer) map.removeLayer(hiLayer);
   hiLayer=L.layerGroup([
-    L.circleMarker(p.c,{radius:16,color:HI(),weight:3,fill:false}),
-    L.circleMarker(p.c,{radius:7,color:'#fff',weight:2,fillColor:HI(),fillOpacity:1})
+    L.circleMarker(p.c,{radius:16,color:HI(),weight:3,fill:false,pane:'hi',interactive:false}),
+    L.circleMarker(p.c,{radius:7,color:'#fff',weight:2,fillColor:HI(),fillOpacity:1,pane:'hi',interactive:false})
   ]).addTo(map);
   if(fly) goTo(p.c,Math.max(map.getZoom(),17));
   const rows=Object.entries(p.f||{}).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
