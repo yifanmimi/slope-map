@@ -58,6 +58,7 @@ a.btn{text-decoration:none;display:inline-block}
   <div class="top">
     <div class="title"><b id="mapName">邊坡圖資編號查詢</b><small id="mapInfo">載入中⋯</small></div>
     <button class="btn" id="openUpload" style="display:none">更換圖資</button>
+    <button class="btn" id="acct" style="display:none" title="登出">登出</button>
   </div>
   <form class="search" id="sf">
     <input id="q" type="search" inputmode="search" placeholder="輸入編號，例如 NO035 或序號 310" autocomplete="off">
@@ -71,6 +72,13 @@ a.btn{text-decoration:none;display:inline-block}
 </div>
 <div id="detail"></div>
 
+<div class="overlay" id="login" style="display:flex;background:var(--bg)">
+  <div class="panel" style="text-align:center">
+    <h2>邊坡圖資編號查詢</h2>
+    <p id="loginMsg">請用已授權的 Google 帳號登入。</p>
+    <div id="gbtn" style="display:flex;justify-content:center;margin:14px 0"></div>
+  </div>
+</div>
 <div class="overlay" id="ov">
   <div class="panel">
     <h2>更換圖資</h2>
@@ -84,6 +92,8 @@ a.btn{text-decoration:none;display:inline-block}
   </div>
 </div>
 
+<script src="config.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
@@ -313,13 +323,40 @@ async function readFile(file){
   return file.text?file.text():new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsText(file)});
 }
 
-// ---------- 伺服器 ----------
-const run=(fn,...args)=>new Promise((ok,no)=>google.script.run.withSuccessHandler(ok).withFailureHandler(no)[fn](...args));
-function errText(e){const m=(e&&e.message)||String(e);return m.replace(/^Exception:\s*/,'')}
+// ---------- 登入與後台 ----------
+const CFG=window.SLOPE_CONFIG||{};
+const TOKEN_KEY='slope-map-token';
+let token=null;
+try{const t=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');if(t&&t.exp*1000>Date.now()+60000)token=t.v}catch(e){}
+function jwtPayload(t){try{return JSON.parse(decodeURIComponent(escape(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))))}catch(e){return{}}}
+function setToken(t){token=t;try{t?localStorage.setItem(TOKEN_KEY,JSON.stringify({v:t,exp:jwtPayload(t).exp})):localStorage.removeItem(TOKEN_KEY)}catch(e){}}
+function showLogin(msg){
+  $('login').style.display='flex'; if(msg)$('loginMsg').textContent=msg;
+  const go=()=>{
+    if(!(window.google&&google.accounts&&google.accounts.id)){setTimeout(go,200);return}
+    google.accounts.id.initialize({client_id:CFG.CLIENT_ID,callback:r=>{setToken(r.credential);$('login').style.display='none';boot()},auto_select:true,cancel_on_tap_outside:false});
+    $('gbtn').innerHTML='';
+    google.accounts.id.renderButton($('gbtn'),{theme:'filled_blue',size:'large',text:'signin_with',shape:'pill',locale:'zh-TW'});
+    google.accounts.id.prompt();
+  };
+  go();
+}
+async function api(action,extra){
+  if(!token){showLogin();throw new Error('請先登入')}
+  const r=await fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({action,token},extra||{}))});
+  const j=await r.json();
+  if(j.error==='TOKEN'){setToken(null);showLogin('登入已過期，請重新登入。');throw new Error('登入已過期')}
+  if(j.error==='NO_ACCESS'){setToken(null);try{google.accounts.id.disableAutoSelect()}catch(e){}showLogin(j.message);throw new Error(j.message)}
+  if(j.error) throw new Error(j.message||j.error);
+  return j;
+}
+function errText(e){return (e&&e.message)||String(e)}
+$('acct').onclick=()=>{setToken(null);try{google.accounts.id.disableAutoSelect()}catch(e){}DATA=null;render();$('acct').style.display='none';$('openUpload').style.display='none';showLogin('已登出。')};
+
 async function saveParsed(parsed){
   const json=JSON.stringify({name:parsed.name,points:parsed.points});
   $('msg').textContent='上傳中⋯';
-  const r=await run('saveData',json);
+  const r=await api('save',{data:json});
   DATA={name:parsed.name,updatedAt:r.updated,points:parsed.points};render();
   $('msg').textContent=`完成，共 ${parsed.points.length} 筆，所有人重新整理後就會看到新版。`;
 }
@@ -332,7 +369,7 @@ $('file').addEventListener('change',async e=>{
 });
 $('syncBtn').onclick=async()=>{
   const msg=$('msg'); msg.style.color=''; msg.textContent='從我的地圖下載中⋯';
-  try{const kml=await run('fetchMyMaps',$('src').value.trim()); await saveParsed(parseKML(kml))}
+  try{const r=await api('fetchMyMaps',{url:$('src').value.trim()}); await saveParsed(parseKML(r.kml))}
   catch(err){msg.style.color='var(--hi)';msg.textContent=errText(err)}
 };
 $('openUpload').onclick=()=>{$('msg').textContent='';$('ov').style.display='flex'};
@@ -340,22 +377,27 @@ $('closeUpload').onclick=()=>{$('ov').style.display='none'};
 $('ov').addEventListener('click',e=>{if(e.target===$('ov'))$('ov').style.display='none'});
 
 // ---------- 啟動 ----------
-(async()=>{
+let googleAdded=false;
+async function boot(){
   $('mapInfo').textContent='下載圖資中⋯';
   try{
-    const r=await run('getData');
-    try{addGoogleLayers(r.google)}catch(e){}
+    const r=await api('get');
+    $('acct').style.display=''; $('acct').title=r.email+'（按此登出）';
+    if(!googleAdded){googleAdded=true;try{addGoogleLayers(r.google)}catch(e){}}
     if(r.canEdit){$('openUpload').style.display='';$('src').value=r.source||''}
+    DATA=null;
     if(r.data){const d=JSON.parse(r.data);DATA={name:d.name,updatedAt:r.updated,points:d.points||[]}}
     render();
+    $('mapInfo').textContent+='・'+r.email;
     if(!DATA||!DATA.points.length) $('emptyMsg').textContent=r.canEdit?'還沒有圖資，按右上角「更換圖資」匯入。':'還沒有圖資。';
   }catch(err){
-    DATA=null;render();
-    const m=errText(err);
-    $('mapInfo').textContent='無法讀取圖資';
-    $('emptyMsg').innerHTML=esc(m);
+    if(token){DATA=null;render();$('mapInfo').textContent='無法讀取圖資';$('emptyMsg').textContent=errText(err)}
   }
-})();
+}
+if(!CFG.API_URL||!CFG.CLIENT_ID||/貼上/.test(CFG.API_URL+CFG.CLIENT_ID)){
+  $('login').style.display='flex';$('loginMsg').textContent='系統尚未設定：請在 config.js 填入 API_URL 與 CLIENT_ID。';
+}else if(token){$('login').style.display='none';boot()}
+else showLogin();
 })();
 </script>
 </body>
