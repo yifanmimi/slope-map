@@ -131,7 +131,7 @@ a.btn{text-decoration:none;display:inline-block}
 (function(){
 const $=id=>document.getElementById(id);
 // 依實際可視高度設定版面，避免網址列擋住
-function fitVh(){const h=(window.visualViewport&&visualViewport.height)||innerHeight;document.documentElement.style.setProperty('--vh',h+'px');window.scrollTo(0,0);if(window.map&&map.invalidateSize)map.invalidateSize()}
+function fitVh(){const h=(window.visualViewport&&visualViewport.height)||innerHeight;document.documentElement.style.setProperty('--vh',h+'px');window.scrollTo(0,0)}
 fitVh();addEventListener('resize',fitVh);addEventListener('orientationchange',()=>setTimeout(fitVh,300));
 if(window.visualViewport){visualViewport.addEventListener('resize',fitVh)}
 let DATA=null; // {name, updatedAt, points:[...]}
