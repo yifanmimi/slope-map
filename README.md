@@ -32,3 +32,7 @@
 ## Google 底圖（選用）
 
 Google Cloud 啟用 Map Tiles API、建立 API 金鑰（應用程式限制：網站 `https://yifanmimi.github.io/*`；API 限制：Map Tiles API），在指令碼屬性新增 `GOOGLE_MAPS_KEY`。需要綁定帳單帳戶。
+
+## 發布新版
+
+改完前台後，把 `index.html` 裡的 `APP_VER` 和 `version.json` 的 `v` 改成同一個新值。已開啟的頁面（包括加到主畫面的）回到前景時會檢查版本，出現「有新版本，點這裡更新」按鈕，點了就會載入新版。

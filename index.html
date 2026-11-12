@@ -133,6 +133,22 @@ a.btn{text-decoration:none;display:inline-block}
 <script>
 (function(){
 const $=id=>document.getElementById(id);
+// ---------- 自動檢查新版 ----------
+const APP_VER='20261112-2245';
+async function checkUpdate(){
+  try{
+    const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'});if(!r.ok)return;
+    const v=(await r.json()).v;
+    if(v&&v!==APP_VER&&!document.getElementById('upd')){
+      const b=document.createElement('button');b.id='upd';b.textContent='有新版本，點這裡更新';
+      b.style.cssText='position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:3000;background:#1a73e8;color:#fff;border:0;border-radius:999px;padding:12px 20px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+      b.onclick=()=>location.replace(location.pathname+'?v='+encodeURIComponent(v));
+      document.body.appendChild(b);
+    }
+  }catch(e){}
+}
+addEventListener('load',checkUpdate);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate()});
 // 舊的主畫面捷徑（狀態列透明模式）會少算高度，改用螢幕高度補齊
 (function(){
   if(!navigator.standalone)return;
