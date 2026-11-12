@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="邊坡圖資">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="theme-color" content="#1f6f5c">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
@@ -20,14 +20,11 @@ html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;backgrou
 body{position:fixed;top:0;left:0;right:0;bottom:0;width:auto;height:auto;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:0;box-sizing:border-box;touch-action:manipulation;background:var(--card)}
 #detail{padding-bottom:env(safe-area-inset-bottom)}
 /* iPhone 主畫面模式：版面高度會少算狀態列，改用整個螢幕高度 */
-@media (display-mode: standalone){body{bottom:auto;height:100vh}header{padding-top:8px}}
-html.ios-pwa body{bottom:auto;height:100vh}
-html.ios-pwa header{padding-top:8px}
 .leaflet-bottom{margin-bottom:env(safe-area-inset-bottom)}
 header,#results,#detail{flex:none}
 #detail{max-height:38dvh!important}
 #results{max-height:34dvh!important}
-header{padding:14px 12px 8px;background:var(--card);border-bottom:1px solid var(--line)}
+header{padding:16px 12px 8px;background:var(--card);border-bottom:1px solid var(--line)}
 .top{display:flex;align-items:center;gap:8px}
 .title{flex:1;min-width:0}
 .title b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -129,14 +126,20 @@ a.btn{text-decoration:none;display:inline-block}
   </div>
 </div>
 
-<script src="config.js?v=20261112i"></script>
+<script src="config.js?v=20261112j"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 (function(){
 const $=id=>document.getElementById(id);
-if(navigator.standalone)document.documentElement.classList.add('ios-pwa');
+// 舊的主畫面捷徑（狀態列透明模式）會少算高度，改用螢幕高度補齊
+(function(){
+  if(!navigator.standalone)return;
+  const probe=document.createElement('div');probe.style.cssText='position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden';document.documentElement.appendChild(probe);
+  const fix=()=>{const top=probe.offsetHeight;if(top<1)return;const H=matchMedia('(orientation: portrait)').matches?screen.height:screen.width;document.body.style.bottom='auto';document.body.style.height=H+'px'};
+  addEventListener('DOMContentLoaded',fix);addEventListener('orientationchange',()=>setTimeout(fix,300));if(document.body)fix();
+})();
 addEventListener('orientationchange',()=>setTimeout(()=>window.scrollTo(0,0),300));
 let DATA=null; // {name, updatedAt, points:[...]}
 let db=null, canWrite=null;
