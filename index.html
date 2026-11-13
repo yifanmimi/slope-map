@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>邊坡圖資編號查詢</title>
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
+<link rel="preconnect" href="https://wmts.nlsc.gov.tw">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -126,15 +129,14 @@ a.btn{text-decoration:none;display:inline-block}
   </div>
 </div>
 
-<script src="config.js?v=20261112k"></script>
+<script src="config.js?v=20261113a"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 (function(){
 const $=id=>document.getElementById(id);
 // ---------- 自動檢查新版 ----------
-const APP_VER='20261112-2245';
+const APP_VER='20261113-1015';
 async function checkUpdate(){
   try{
     const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'});if(!r.ok)return;
@@ -228,7 +230,7 @@ function nearestPt(cp){
   DATA.points.forEach((p,i)=>{if(p.g!=='pt')return;const q=map.latLngToContainerPoint(p.c);const d=(q.x-cp.x)**2+(q.y-cp.y)**2;if(d<bd){bd=d;best=i}});
   return best;
 }
-function render(){
+function render(fit=true){
   layerAll.clearLayers(); markers=[]; if(hiLayer){map.removeLayer(hiLayer);hiLayer=null}
   $('detail').style.display='none';
   if(!DATA||!DATA.points.length){
@@ -254,7 +256,7 @@ function render(){
     m.on('click',ev=>{L.DomEvent.stopPropagation(ev);const n=nearestPt(ev.containerPoint);select(n>=0?n:i,false)});
     m.addTo(layerAll); markers.push(m); bounds.push(p.c);
   });
-  if(bounds.length) map.fitBounds(bounds,{padding:[20,20],animate:false});
+  if(fit&&bounds.length) map.fitBounds(bounds,{padding:[20,20],animate:false});
   updateLabels();
 }
 // labels only when zoomed in enough, to keep 1000 points readable
@@ -395,6 +397,7 @@ function parseKML(text){
 }
 async function readFile(file){
   if(/\.kmz$/i.test(file.name)||file.type.includes('kmz')){
+    if(!window.JSZip) await new Promise((ok,no)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';sc.onload=ok;sc.onerror=()=>no(new Error('解壓縮元件載入失敗'));document.head.appendChild(sc)});
     const zip=await JSZip.loadAsync(file);
     const k=Object.keys(zip.files).find(n=>/\.kml$/i.test(n));
     if(!k) throw new Error('KMZ 裡找不到 KML');
@@ -426,18 +429,18 @@ async function api(action,extra){
   const r=await fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({action,token},extra||{}))});
   const j=await r.json();
   if(j.error==='TOKEN'){setToken(null);showLogin('登入已過期，請重新登入。');throw new Error('登入已過期')}
-  if(j.error==='NO_ACCESS'){setToken(null);try{google.accounts.id.disableAutoSelect()}catch(e){}showLogin(j.message);throw new Error(j.message)}
+  if(j.error==='NO_ACCESS'){idbDel('data');DATA=null;try{render()}catch(e){}setToken(null);try{google.accounts.id.disableAutoSelect()}catch(e){}showLogin(j.message);throw new Error(j.message)}
   if(j.error) throw new Error(j.message||j.error);
   return j;
 }
 function errText(e){return (e&&e.message)||String(e)}
-$('acct').onclick=()=>{setToken(null);try{google.accounts.id.disableAutoSelect()}catch(e){}DATA=null;render();$('acct').style.display='none';$('openUpload').style.display='none';showLogin('已登出。')};
+$('acct').onclick=()=>{idbDel('data');setToken(null);try{google.accounts.id.disableAutoSelect()}catch(e){}DATA=null;render();$('acct').style.display='none';$('openUpload').style.display='none';showLogin('已登出。')};
 
 async function saveParsed(parsed){
   const json=JSON.stringify({name:parsed.name,points:parsed.points});
   $('msg').textContent='上傳中⋯';
   const r=await api('save',{data:json});
-  DATA={name:parsed.name,updatedAt:r.updated,points:parsed.points};render();
+  DATA={name:parsed.name,updatedAt:r.updated,points:parsed.points};render();cacheData();
   $('msg').textContent=`完成，共 ${parsed.points.length} 筆，所有人重新整理後就會看到新版。`;
 }
 $('file').addEventListener('change',async e=>{
@@ -488,19 +491,37 @@ $('ov').addEventListener('click',e=>{if(e.target===$('ov'))$('ov').style.display
 
 // ---------- 啟動 ----------
 let googleAdded=false;
+// ---------- 本機快取（IndexedDB）：先顯示上次的圖資，再到後台檢查有沒有更新 ----------
+function idb(){return new Promise((ok,no)=>{try{const r=indexedDB.open('slope-map',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}catch(e){no(e)}})}
+async function idbGet(k){try{const d=await idb();return await new Promise(ok=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>ok(q.result);q.onerror=()=>ok(null)})}catch(e){return null}}
+async function idbSet(k,v){try{const d=await idb();await new Promise(ok=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=ok;t.onerror=ok})}catch(e){}}
+async function idbDel(k){try{const d=await idb();await new Promise(ok=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').delete(k);t.oncomplete=ok;t.onerror=ok})}catch(e){}}
+function cacheData(){if(DATA&&DATA.points&&DATA.points.length)idbSet('data',{name:DATA.name,updatedAt:DATA.updatedAt,points:DATA.points})}
+
 async function boot(){
-  $('mapInfo').textContent='下載圖資中⋯';
+  let cached=null;
+  if(!DATA){
+    cached=await idbGet('data');
+    if(cached&&cached.points&&cached.points.length){DATA=cached;render();$('mapInfo').textContent+='・檢查更新中⋯'}
+    else $('mapInfo').textContent='下載圖資中⋯';
+  }
   try{
     const r=await api('get');
     $('acct').style.display=''; $('acct').title=r.email+'（按此登出）'; ME=r.email;
     if(!googleAdded){googleAdded=true;try{addGoogleLayers(r.google)}catch(e){}}
     if(r.canEdit){$('openUpload').style.display='';$('src').value=r.source||''}
-    DATA=null;
-    if(r.data){const d=JSON.parse(r.data);DATA={name:d.name,updatedAt:r.updated,points:d.points||[]}}
-    render();
-    if(!DATA||!DATA.points.length) $('emptyMsg').textContent=r.canEdit?'還沒有圖資，按右上角「更換圖資」匯入。':'還沒有圖資。';
+    const had=DATA&&DATA.points&&DATA.points.length;
+    if(!(had&&DATA.updatedAt===r.updated)){
+      DATA=null;
+      if(r.data){const d=JSON.parse(r.data);DATA={name:d.name,updatedAt:r.updated,points:d.points||[]}}
+      render(!had);
+      if(DATA) cacheData(); else idbDel('data');
+    }
+    if(DATA){const d=DATA.updatedAt?new Date(DATA.updatedAt):null;$('mapInfo').textContent=DATA.points.length+' 筆'+(d?'・更新於 '+d.toLocaleDateString('zh-TW'):'')}
+    if(!DATA||!DATA.points.length) $('emptyMsg').textContent=r.canEdit?'還沒有圖資，按右上角「管理」匯入。':'還沒有圖資。';
   }catch(err){
-    if(token){DATA=null;render();$('mapInfo').textContent='無法讀取圖資';$('emptyMsg').textContent=errText(err)}
+    if(token&&!(DATA&&DATA.points&&DATA.points.length)){DATA=null;render();$('mapInfo').textContent='無法讀取圖資';$('emptyMsg').textContent=errText(err)}
+    else if(DATA) $('mapInfo').textContent=DATA.points.length+' 筆・離線資料（無法連線檢查更新）';
   }
 }
 if(!CFG.API_URL||!CFG.CLIENT_ID||/貼上/.test(CFG.API_URL+CFG.CLIENT_ID)){
