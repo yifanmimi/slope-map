@@ -68,6 +68,7 @@ a.btn{text-decoration:none;display:inline-block}
 .panel p{font-size:14px;line-height:1.6;margin:8px 0}
 #msg{font-size:14px;margin-top:8px;min-height:1.2em}
 .leaflet-control-layers{font-size:14px}
+.verlbl{font-size:10px;color:#555;background:rgba(255,255,255,.7);padding:1px 5px;border-radius:3px;margin:0 0 2px 4px!important;pointer-events:none}
 .acl{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
 .acl .em{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .acl select,.acl button{font-size:13px;padding:5px 8px}
@@ -136,7 +137,7 @@ a.btn{text-decoration:none;display:inline-block}
 (function(){
 const $=id=>document.getElementById(id);
 // ---------- 自動檢查新版 ----------
-const APP_VER='20261113-1105';
+const APP_VER='20261113-1112';
 async function checkUpdate(){
   try{
     const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'});if(!r.ok)return;
@@ -190,6 +191,11 @@ function addGoogleLayers(g){
 // 縮放動畫中呼叫 setView 會被 Leaflet 忽略，等動畫結束再跳
 function goTo(ll,z){ if(map._animatingZoom){map.once('zoomend',()=>goTo(ll,z));return} map.setView(ll,z); }
 map.attributionControl.setPrefix(false);
+// 左下角小字：系統版本與更新時間
+(function(){const m=APP_VER.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/);
+  const txt=m?`系統版本 ${m[1]}.${m[2]}.${m[3]} ${m[4]}:${m[5]}`:'系統版本 '+APP_VER;
+  const C=L.Control.extend({options:{position:'bottomleft'},onAdd(){const d=L.DomUtil.create('div','verlbl');d.textContent=txt;return d}});
+  map.addControl(new C());})();
 // 圖層順序：面、線在下，點在上，選取標記最上
 // 先畫面和線、再畫點，點擊時會先選到上層的點
 map.createPane('hi').style.zIndex=640;
