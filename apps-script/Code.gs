@@ -40,10 +40,11 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents);
     const email = verify_(req.token);
     const role = role_(email);
-    if (!role) return json_({ error: 'NO_ACCESS', email: email, message: email + ' 沒有使用權限，請聯絡管理員。' });
+    if (!role) { log_(email, '拒絕（無權限）', req.ua); return json_({ error: 'NO_ACCESS', email: email, message: email + ' 沒有使用權限，請聯絡管理員。' }); }
     const needEdit = () => { if (role !== 'edit') throw new Error('你只有查看權限，不能更換圖資。'); };
     switch (req.action) {
-      case 'get': return json_(getData_(email, role));
+      case 'get': log_(email, req.fresh ? '登入' : '開啟', req.ua); return json_(getData_(email, role));
+      case 'logList': if (email !== owner_()) throw new Error('只有擁有者可以查看登入紀錄。'); return json_(logList_());
       case 'save': needEdit(); return json_(saveData_(req.data));
       case 'fetchMyMaps': needEdit(); return json_({ kml: fetchMyMaps_(req.url) });
       case 'aclList': needEdit(); return json_(aclList_());
@@ -177,6 +178,7 @@ function getData_(email, role) {
   return {
     email: email,
     canEdit: role === 'edit',
+    isOwner: email === owner_(),
     data: f.getBlob().getDataAsString('UTF-8') || null,
     updated: f.getLastUpdated().toISOString(),
     source: role === 'edit' ? (props.getProperty('SOURCE') || DEFAULT_SOURCE) : '',
@@ -227,4 +229,39 @@ function googleTiles_() {
   const out = { key: key, sessions: sessions };
   if (Object.keys(sessions).length) cache.put('gtiles', JSON.stringify(out), 21600);
   return out;
+}
+
+/** 登入紀錄：存在權限試算表的「登入紀錄」工作表，只有擁有者看得到 */
+const LOG_MAX = 5000;
+function logSheet_() {
+  const ss = aclSheet_().getParent();
+  let sh = ss.getSheetByName('登入紀錄');
+  if (!sh) {
+    sh = ss.insertSheet('登入紀錄');
+    sh.getRange(1, 1, 1, 4).setValues([['時間', '帳號', '動作', '裝置']]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1, 160); sh.setColumnWidth(2, 240); sh.setColumnWidth(4, 200);
+  }
+  return sh;
+}
+
+function log_(email, action, ua) {
+  try {
+    const sh = logSheet_();
+    sh.appendRow([new Date(), email, action, String(ua || '').slice(0, 100)]);
+    const extra = sh.getLastRow() - 1 - LOG_MAX;
+    if (extra > 0) sh.deleteRows(2, extra);
+  } catch (e) { console.warn('log failed', e); }
+}
+
+function logList_() {
+  const sh = logSheet_();
+  const n = sh.getLastRow() - 1;
+  const take = Math.min(n, 300);
+  const rows = take > 0 ? sh.getRange(n - take + 2, 1, take, 4).getValues() : [];
+  return {
+    sheetUrl: sh.getParent().getUrl() + '#gid=' + sh.getSheetId(),
+    total: Math.max(n, 0),
+    rows: rows.reverse().map(r => ({ t: r[0] instanceof Date ? r[0].toISOString() : String(r[0]), email: r[1], action: r[2], ua: r[3] }))
+  };
 }
