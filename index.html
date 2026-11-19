@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>邊坡圖資編號查詢</title>
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
+<link rel="preconnect" href="https://wmts.nlsc.gov.tw">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="邊坡圖資">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#1f6f5c">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d2320;--mute:#6b736f;--line:#dcdfdb;--acc:#1f6f5c;--acc2:#e3f1ec;--hi:#d9480f}
+@media (prefers-color-scheme:dark){:root{--bg:#141716;--card:#1d2120;--ink:#e8ece9;--mute:#9aa39e;--line:#2f3532;--acc:#5cc2a3;--acc2:#1e3a32;--hi:#ff8a4c}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+body{position:fixed;top:0;left:0;right:0;bottom:0;width:auto;height:auto;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:0;box-sizing:border-box;touch-action:manipulation;background:var(--card)}
+#detail{padding-bottom:env(safe-area-inset-bottom)}
+/* iPhone 主畫面模式：版面高度會少算狀態列，改用整個螢幕高度 */
+.leaflet-bottom{margin-bottom:env(safe-area-inset-bottom)}
+header,#results,#detail{flex:none}
+#detail{max-height:38dvh!important}
+#results{max-height:34dvh!important}
+header{padding:16px 12px 8px;background:var(--card);border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:8px}
+.title{flex:1;min-width:0}
+.title b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsw{position:relative;display:flex;align-items:center;gap:4px;min-width:0}
+.dsw b{min-width:0}
+#dsArrow{font-size:12px;color:var(--acc);background:var(--acc2);border-radius:6px;padding:1px 6px;flex:none}
+#dsSel{position:absolute;inset:0;opacity:0;width:100%;font-size:16px;cursor:pointer}
+.dsr{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.dsr .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsr button{font-size:13px;padding:5px 8px}
+.title small{display:block;color:var(--mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 12px;font-size:14px;cursor:pointer;white-space:nowrap}
+.btn.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+.search{display:flex;gap:8px;margin-top:8px}
+.search .qw{flex:1;min-width:0;position:relative;display:flex}
+.search input{flex:1;min-width:0;padding-right:40px!important;font-size:20px;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);outline:none}
+.search input:focus{border-color:var(--acc)}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+#qx{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border:0;border-radius:50%;background:var(--line);color:var(--ink);font-size:15px;line-height:30px;padding:0;cursor:pointer;display:none}
+#results{max-height:34vh;overflow:auto;background:var(--card);border-bottom:1px solid var(--line);display:none}
+.r{padding:10px 14px;border-top:1px solid var(--line);cursor:pointer}
+.r:active,.r:hover{background:var(--acc2)}
+.r b{font-size:15px}.r span{color:var(--mute);font-size:12px;margin-left:6px}
+.note{padding:10px 14px;color:var(--mute);font-size:13px}
+#map{flex:1;min-height:200px;background:#e9ece8}
+@media (prefers-color-scheme:dark){#map{background:#202624}}
+#detail{background:var(--card);border-top:1px solid var(--line);max-height:42vh;overflow:auto;display:none}
+#detail .dh{position:sticky;top:0;background:var(--card);display:flex;align-items:center;gap:6px;padding:10px 10px 6px 14px;cursor:pointer;z-index:1}
+#detail .dh h3{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#detail .ib{border:0;background:var(--bg);color:var(--ink);border-radius:50%;width:34px;height:34px;font-size:16px;line-height:34px;text-align:center;cursor:pointer;flex:none;padding:0}
+#detail .db{padding:0 14px 12px}
+#detail.min .db{display:none}
+#detail h3{font-size:18px}
+#detail .meta{color:var(--mute);font-size:12px;margin-bottom:8px}
+#detail table{border-collapse:collapse;width:100%;font-size:14px;margin:6px 0}
+#detail td{border-top:1px solid var(--line);padding:5px 4px;vertical-align:top}
+#detail td:first-child{color:var(--mute);white-space:nowrap;width:1%;padding-right:10px}
+#detail .desc{font-size:14px;white-space:pre-wrap;margin:6px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+a.btn{text-decoration:none;display:inline-block}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:2000;padding:16px}
+.panel{background:var(--card);border-radius:16px;max-width:460px;width:100%;padding:18px;max-height:90vh;overflow:auto}
+.panel h2{margin:0 0 8px;font-size:18px}
+.panel ol{padding-left:20px;margin:8px 0;font-size:14px;line-height:1.7}
+.panel p{font-size:14px;line-height:1.6;margin:8px 0}
+#msg{font-size:14px;margin-top:8px;min-height:1.2em}
+.leaflet-control-layers{font-size:14px}
+.verlbl{font-size:10px;color:#555;background:rgba(255,255,255,.7);padding:1px 5px;border-radius:3px;margin:0 0 2px 4px!important;pointer-events:none}
+.acl{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.acl .em{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acl select,.acl button{font-size:13px;padding:5px 8px}
+.acl .tag{color:var(--mute);font-size:12px}
+.lg{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:7px 0;border-top:1px solid var(--line)}
+.lg .t{color:var(--mute);white-space:nowrap}.lg .e{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lg .a{font-weight:600}.lg .a.no{color:var(--hi)}.lg .d{color:var(--mute)}
+.leaflet-bar a.locbtn{display:flex!important;align-items:center;justify-content:center;padding:0;background:#fff;cursor:pointer;color:#222}
+.leaflet-bar a.locbtn svg{width:20px;height:20px;display:block}
+.leaflet-bar a.locbtn.on{color:#1a73e8}
+.empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:500;pointer-events:none}
+.empty div{background:var(--card);padding:16px 18px;border-radius:14px;max-width:300px;text-align:center;font-size:14px;line-height:1.6;pointer-events:auto;box-shadow:0 2px 12px rgba(0,0,0,.12)}
+.leaflet-tooltip.lbl{background:transparent;border:0;box-shadow:none;color:var(--ink);font-size:11px;font-weight:600;padding:0;text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
+.leaflet-tooltip.lbl:before{display:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div class="title"><div class="dsw"><b id="mapName">邊坡圖資編號查詢</b><span id="dsArrow" style="display:none">▾</span><select id="dsSel" aria-label="切換圖資" style="display:none"></select></div><small id="mapInfo">載入中⋯</small></div>
+    <button class="btn" id="openUpload" style="display:none">管理</button>
+    <button class="btn" id="acct" style="display:none" title="登出">登出</button>
+  </div>
+  <form class="search" id="sf">
+    <div class="qw"><input id="q" type="search" inputmode="search" placeholder="輸入編號，例如 NO035 或序號 310" autocomplete="off"><button type="button" id="qx" aria-label="清除">✕</button></div>
+    <button class="btn pri" type="submit">定位</button>
+  </form>
+</header>
+<div id="results"></div>
+<div style="position:relative;flex:1;min-height:0;display:flex;flex-direction:column">
+  <div id="map"></div>
+  <div class="empty" id="empty" style="display:none"><div id="emptyMsg">還沒有圖資。</div></div>
+</div>
+<div id="detail"></div>
+
+<div class="overlay" id="login" style="display:flex;background:var(--bg)">
+  <div class="panel" style="text-align:center">
+    <h2>邊坡圖資編號查詢</h2>
+    <p id="loginMsg">請用已授權的 Google 帳號登入。</p>
+    <div id="gbtn" style="display:flex;justify-content:center;margin:14px 0"></div>
+  </div>
+</div>
+<div class="overlay" id="ov">
+  <div class="panel">
+    <h2>圖資列表</h2>
+    <p style="color:var(--mute);font-size:13px;margin-top:0">點標題旁的 ▾ 可以切換。新增時貼上我的地圖網址（地圖要開「知道連結的人可以檢視」）。</p>
+    <div id="dsList"></div>
+    <form id="dsAdd" class="row" style="align-items:center">
+      <input id="dsName" placeholder="名稱（可留空，自動用地圖名稱）" style="flex:1;min-width:140px;font-size:15px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+      <input id="dsUrl" type="url" required placeholder="我的地圖網址" style="flex:2;min-width:180px;font-size:15px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+      <button class="btn pri" type="submit">新增</button>
+    </form>
+    <div id="dsMsg" style="font-size:13px;min-height:1.2em;margin-top:6px"></div>
+    <h2 style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line)">更新目前這份圖資</h2>
+    <p><b>方法一：從我的地圖同步</b><br>來源網址（地圖要開「知道連結的人可以檢視」）。</p>
+    <input id="src" type="url" style="width:100%;font-size:14px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+    <div class="row"><button class="btn pri" id="syncBtn">立即同步</button></div>
+    <p style="margin-top:16px"><b>方法二：上傳 KML / KMZ 檔</b><br>我的地圖（電腦版）→ 地圖名稱旁「⋮」→「匯出至 KML/KMZ」，選整份地圖，不要勾「保持資料在最新狀態」。</p>
+    <input type="file" id="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz">
+    <div id="msg"></div>
+    <h2 style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line)">權限管理</h2>
+    <p style="color:var(--mute);font-size:13px;margin-top:0">查看＝可以查詢；編輯＝可以換圖和管理權限。名單同步存在試算表 <a id="aclSheet" href="#" target="_blank" rel="noopener">邊坡圖資權限</a>。</p>
+    <div id="aclList" style="font-size:14px"></div>
+    <form id="aclAdd" class="row" style="align-items:center">
+      <input id="aclEmail" type="email" placeholder="輸入 Gmail 帳號" required style="flex:1;min-width:160px;font-size:15px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+      <select id="aclRole" class="btn"><option value="view">查看</option><option value="edit">編輯</option></select>
+      <button class="btn pri" type="submit">新增</button>
+    </form>
+    <div id="aclMsg" style="font-size:13px;min-height:1.2em;margin-top:6px"></div>
+    <div id="logSec" style="display:none">
+      <h2 style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line)">登入紀錄 <span style="font-size:12px;color:var(--mute);font-weight:normal">只有擁有者看得到</span></h2>
+      <p style="color:var(--mute);font-size:13px;margin-top:0">最近 300 筆，完整紀錄在試算表 <a id="logSheet" href="#" target="_blank" rel="noopener">登入紀錄</a>。</p>
+      <div class="row" style="margin-top:0"><button class="btn" type="button" id="logLoad">載入紀錄</button></div>
+      <div id="logList" style="font-size:13px;margin-top:8px"></div>
+    </div>
+    <div class="row"><button class="btn" id="closeUpload">關閉</button></div>
+  </div>
+</div>
+
+<script src="config.js?v=20261113a"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+// ---------- 自動檢查新版 ----------
+const APP_VER='20261117-1130';
+async function checkUpdate(){
+  try{
+    const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'});if(!r.ok)return;
+    const v=(await r.json()).v;
+    if(v&&v!==APP_VER&&!document.getElementById('upd')){
+      const b=document.createElement('button');b.id='upd';b.textContent='有新版本，點這裡更新';
+      b.style.cssText='position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:3000;background:#1a73e8;color:#fff;border:0;border-radius:999px;padding:12px 20px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+      b.onclick=()=>location.replace(location.pathname+'?v='+encodeURIComponent(v));
+      document.body.appendChild(b);
+    }
+  }catch(e){}
+}
+addEventListener('load',checkUpdate);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate()});
+// 舊的主畫面捷徑（狀態列透明模式）會少算高度，改用螢幕高度補齊
+(function(){
+  if(!navigator.standalone)return;
+  const probe=document.createElement('div');probe.style.cssText='position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden';document.documentElement.appendChild(probe);
+  const fix=()=>{const top=probe.offsetHeight;if(top<1)return;const H=matchMedia('(orientation: portrait)').matches?screen.height:screen.width;document.body.style.bottom='auto';document.body.style.height=H+'px'};
+  addEventListener('DOMContentLoaded',fix);addEventListener('orientationchange',()=>setTimeout(fix,300));if(document.body)fix();
+})();
+addEventListener('orientationchange',()=>setTimeout(()=>window.scrollTo(0,0),300));
+let DATA=null; // {name, updatedAt, points:[...]}
+let db=null, canWrite=null;
+const LS_KEY='slope-map-local-v1';
+
+// ---------- map ----------
+// 全部向量圖層共用同一張畫布；多張畫布疊在一起時，上面那張會擋住下面的點擊
+const vecR=L.canvas({tolerance:6});
+const map=L.map('map',{zoomControl:true,renderer:vecR,maxZoom:20}).setView([24.99,121.57],13);
+const nlsc=(id,ext)=>L.tileLayer('https://wmts.nlsc.gov.tw/wmts/'+id+'/default/GoogleMapsCompatible/{z}/{y}/{x}',Object.assign({maxZoom:20,maxNativeZoom:19,attribution:'國土測繪中心'},ext||{}));
+const bases={
+  '國土測繪 電子地圖':nlsc('EMAP'),
+  '國土測繪 電子地圖＋等高線':nlsc('EMAP5'),
+  '國土測繪 正射影像':nlsc('PHOTO2',{maxNativeZoom:20}),
+  '國土測繪 地形暈渲（高程）':nlsc('MOI_HILLSHADE',{maxNativeZoom:16}),
+  'OpenTopoMap 地形圖':L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'abc',maxZoom:20,maxNativeZoom:17,attribution:'© OpenTopoMap (CC-BY-SA)'}),
+  'OpenStreetMap':L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,maxNativeZoom:19,attribution:'© OpenStreetMap'})
+};
+bases['國土測繪 電子地圖'].addTo(map);
+const layerCtl=L.control.layers(bases,{'等高線疊加（國土測繪）':nlsc('EMAP5',{opacity:.55})},{position:'topright'}).addTo(map);
+// Google 底圖（需在伺服器設定 Map Tiles API 金鑰）
+function addGoogleLayers(g){
+  if(!g||!g.key) return;
+  const names={roadmap:'Google 街道圖',satellite:'Google 衛星圖',terrain:'Google 地形圖'};
+  Object.entries(names).forEach(([t,label])=>{
+    const ses=g.sessions&&g.sessions[t]; if(!ses) return;
+    layerCtl.addBaseLayer(L.tileLayer('https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?session='+encodeURIComponent(ses)+'&key='+encodeURIComponent(g.key),{maxZoom:20,maxNativeZoom:t==='terrain'?15:20,attribution:'© Google'}),label);
+  });
+}
+// 縮放動畫中呼叫 setView 會被 Leaflet 忽略，等動畫結束再跳
+function goTo(ll,z){ if(map._animatingZoom){map.once('zoomend',()=>goTo(ll,z));return} map.setView(ll,z); }
+map.attributionControl.setPrefix(false);
+// 左下角小字：系統版本與更新時間
+(function(){const m=APP_VER.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/);
+  const txt=m?`系統版本 ${m[1]}.${m[2]}.${m[3]} ${m[4]}:${m[5]}`:'系統版本 '+APP_VER;
+  const C=L.Control.extend({options:{position:'bottomleft'},onAdd(){const d=L.DomUtil.create('div','verlbl');d.textContent=txt;return d}});
+  map.addControl(new C());})();
+// 圖層順序：面、線在下，點在上，選取標記最上
+// 先畫面和線、再畫點，點擊時會先選到上層的點
+map.createPane('hi').style.zIndex=640;
+map.getPane('hi').style.pointerEvents='none';
+// ---------- 現在位置 ----------
+let me=null, meAcc=null, following=false, firstFix=false;
+const LocCtl=L.Control.extend({options:{position:'topleft'},onAdd(){
+  const d=L.DomUtil.create('div','leaflet-bar');
+  const a=L.DomUtil.create('a','locbtn',d); a.href='#'; a.title='我的位置';
+  a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg>';
+  L.DomEvent.on(a,'click',e=>{L.DomEvent.preventDefault(e);L.DomEvent.stopPropagation(e);
+    if(following&&me){goTo(me.getLatLng(),Math.max(map.getZoom(),17));return}
+    following=true;firstFix=false;a.classList.add('on');
+    map.locate({watch:true,enableHighAccuracy:true,setView:false,maximumAge:5000});
+  });
+  return d;}});
+map.addControl(new LocCtl());
+map.on('locationfound',e=>{
+  if(!me){me=L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1,pane:'hi',interactive:false}).addTo(map);
+    meAcc=L.circle(e.latlng,{radius:e.accuracy,color:'#1a73e8',weight:1,fillOpacity:.1,interactive:false,pane:'hi'}).addTo(map)}
+  else{me.setLatLng(e.latlng);meAcc.setLatLng(e.latlng).setRadius(e.accuracy)}
+  me.bindTooltip('我的位置（誤差約 '+Math.round(e.accuracy)+' 公尺）');
+  if(!firstFix){firstFix=true;goTo(e.latlng,Math.max(map.getZoom(),17))}
+});
+map.on('locationerror',e=>{following=false;document.querySelector('.locbtn')?.classList.remove('on');
+  showToast(e.code===1?'沒有定位權限，請在瀏覽器設定允許此網站使用位置':'目前無法取得位置')});
+function showToast(t){let el=document.getElementById('toast');if(!el){el=document.createElement('div');el.id='toast';el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;z-index:3000;max-width:90%';document.body.appendChild(el)}el.textContent=t;el.style.display='block';clearTimeout(el._t);el._t=setTimeout(()=>el.style.display='none',3500)}
+const layerAll=L.layerGroup().addTo(map);
+let hiLayer=null, markers=[];
+const css=getComputedStyle(document.documentElement);
+const ACC=()=>css.getPropertyValue('--acc').trim()||'#1f6f5c';
+const HI=()=>css.getPropertyValue('--hi').trim()||'#d9480f';
+const PALETTE=['#1f6f5c','#2b6cb0','#9c4221','#6b46c1','#b7791f','#2c7a7b','#c53030','#4a5568','#2f855a','#975a16'];
+
+// 點擊時找最近的點（24px 內），點優先於面和線
+function nearestPt(cp){
+  let best=-1,bd=24*24;
+  DATA.points.forEach((p,i)=>{if(p.g!=='pt')return;const q=map.latLngToContainerPoint(p.c);const d=(q.x-cp.x)**2+(q.y-cp.y)**2;if(d<bd){bd=d;best=i}});
+  return best;
+}
+function render(fit=true){
+  layerAll.clearLayers(); markers=[]; if(hiLayer){map.removeLayer(hiLayer);hiLayer=null}
+  $('detail').style.display='none';
+  if(!DATA||!DATA.points.length){
+    $('empty').style.display='flex';
+    $('mapName').textContent='邊坡圖資編號查詢';
+    $('mapInfo').textContent='尚無圖資';
+    return;
+  }
+  $('empty').style.display='none';
+  $('mapName').textContent=DATA.name||'邊坡圖資編號查詢';
+  document.title=(DATA.name||'邊坡圖資')+'｜編號查詢';
+  const d=DATA.updatedAt?new Date(DATA.updatedAt):null;
+  $('mapInfo').textContent=DATA.points.length+' 筆'+(d?'・更新於 '+d.toLocaleDateString('zh-TW'):'')+(DATA.local?'・僅存在這台裝置':'');
+  const layers=[...new Set(DATA.points.map(p=>p.l))];
+  const bounds=[];
+  const order=DATA.points.map((p,i)=>i).sort((a,b)=>(DATA.points[a].g==='pt')-(DATA.points[b].g==='pt'));
+  order.forEach(i=>{const p=DATA.points[i];
+    const col=p.s||PALETTE[layers.indexOf(p.l)%PALETTE.length];
+    let m;
+    if(p.g==='line'&&p.k) m=L.polyline(p.k,{color:col,weight:3,renderer:vecR});
+    else if(p.g==='poly'&&p.k) m=L.polygon(p.k,{color:col,weight:2,fillOpacity:.15,renderer:vecR});
+    else m=L.circleMarker(p.c,{radius:6,color:'#fff',weight:1.5,fillColor:col,fillOpacity:.95,renderer:vecR});
+    m.on('click',ev=>{L.DomEvent.stopPropagation(ev);const n=nearestPt(ev.containerPoint);select(n>=0?n:i,false)});
+    m.addTo(layerAll); markers.push(m); bounds.push(p.c);
+  });
+  if(fit&&bounds.length) map.fitBounds(bounds,{padding:[20,20],animate:false});
+  updateLabels();
+}
+// labels only when zoomed in enough, to keep 1000 points readable
+let labelLayer=L.layerGroup().addTo(map);
+function updateLabels(){
+  labelLayer.clearLayers();
+  if(!DATA) return;
+  const z=map.getZoom(), b=map.getBounds();
+  if(z<16) return;
+  let n=0;
+  for(const p of DATA.points){
+    if(!b.contains(p.c)) continue;
+    if(p.n==='(未命名)') continue;
+    if(++n>300) break;
+    L.tooltip({permanent:true,direction:'right',className:'lbl',offset:[6,0]}).setLatLng(p.c).setContent(esc(p.n)).addTo(labelLayer);
+  }
+}
+map.on('zoomend moveend',updateLabels);
+map.on('click',e=>{
+  const ll=e.latlng.lat.toFixed(6)+','+e.latlng.lng.toFixed(6);
+  L.popup().setLatLng(e.latlng).setContent(`<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${ll}" target="_blank" rel="noopener">這裡的街景</a>`).openOn(map);
+});
+
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+let detailMin=false;
+function select(i,fly=true){
+  const p=DATA.points[i];
+  if(hiLayer) map.removeLayer(hiLayer);
+  hiLayer=L.layerGroup([
+    L.circleMarker(p.c,{radius:16,color:HI(),weight:3,fill:false,pane:'hi',interactive:false}),
+    L.circleMarker(p.c,{radius:7,color:'#fff',weight:2,fillColor:HI(),fillOpacity:1,pane:'hi',interactive:false})
+  ]).addTo(map);
+  if(fly) goTo(p.c,Math.max(map.getZoom(),17));
+  const rows=Object.entries(p.f||{}).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+  const ll=p.c[0].toFixed(6)+','+p.c[1].toFixed(6);
+  $('detail').innerHTML=`<div class="dh" id="dh"><h3>${esc(p.n)}</h3><button class="ib" id="dgo" aria-label="回到這個點" title="回到這個點"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:middle"><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="8"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg></button><button class="ib" id="dmin" aria-label="收合">${detailMin?'▴':'▾'}</button><button class="ib" id="dclose" aria-label="關閉">✕</button></div><div class="db"><div class="meta">${esc(p.l)}・${ll}</div>`+
+    (p.d?`<div class="desc">${esc(p.d)}</div>`:'')+(rows?`<table>${rows}</table>`:'')+
+    `<div class="row"><a class="btn pri" href="https://www.google.com/maps/search/?api=1&query=${ll}" target="_blank" rel="noopener">在 Google 地圖開啟</a>`+
+    `<button class="btn" id="dgo2">回到這個點</button>`+
+    `<a class="btn pri" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${ll}" target="_blank" rel="noopener">街景</a>`+
+    `<a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${ll}" target="_blank" rel="noopener">導航</a>`+
+    `<button class="btn" id="cpy">複製座標</button></div></div>`;
+  $('detail').style.display='block';
+  $('detail').classList.toggle('min',detailMin);
+  const tog=()=>{detailMin=!detailMin;$('detail').classList.toggle('min',detailMin);$('dmin').textContent=detailMin?'▴':'▾';$('detail').scrollTop=0;setTimeout(()=>map.invalidateSize(),50)};
+  const goBack=e=>{e.stopPropagation();goTo(p.c,Math.max(map.getZoom(),18))};
+  $('dgo').onclick=goBack; $('dgo2').onclick=goBack;
+  $('dh').onclick=e=>{if(!e.target.closest('button'))tog()};
+  $('dmin').onclick=e=>{e.stopPropagation();tog()};
+  $('dclose').onclick=e=>{e.stopPropagation();$('detail').style.display='none';if(hiLayer){map.removeLayer(hiLayer);hiLayer=null}setTimeout(()=>map.invalidateSize(),50)};
+  const cb=$('cpy'); cb.onclick=()=>{try{navigator.clipboard.writeText(ll).then(()=>cb.textContent='已複製',()=>cb.textContent=ll)}catch(e){cb.textContent=ll}};
+  setTimeout(()=>map.invalidateSize(),50);
+}
+
+// ---------- search ----------
+function norm(s){return String(s??'').replace(/[！-～]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/　/g,' ').trim().toUpperCase()}
+const IDKEY=/編號|序號|號碼|編碼|代碼|^ID$|ID$|^NO|NAME$|^SNUM$|^IDNO$|SN碼|樁號|^POS/i;
+function strip0(v){return v.replace(/^[A-Z]*-?/,'').replace(/^0+(?=\d)/,'')}
+function search(qRaw){
+  const q=norm(qRaw); if(!q||!DATA) return {exact:[],part:[]};
+  const qs=strip0(q);
+  const exact=[],part=[];
+  DATA.points.forEach((p,i)=>{
+    const vals=[['名稱',p.n],...Object.entries(p.f||{}).filter(([k])=>IDKEY.test(k))].map(([k,v])=>[k,norm(v)]).filter(([,v])=>v);
+    let hit=null;
+    for(const [k,v] of vals){ if(v===q||(qs&&/\d/.test(qs)&&strip0(v)===qs)){hit=k;break} }
+    if(hit){exact.push([i,hit]);return}
+    if(q.length>=2&&(vals.some(([,v])=>v.includes(q))||Object.values(p.f||{}).some(v=>norm(v).includes(q)))) part.push([i,'']);
+  });
+  return {exact,part};
+}
+function showResults(res,q){
+  const box=$('results');
+  if(!q){box.style.display='none';return}
+  const {exact,part}=res; let h='';
+  if(!exact.length&&!part.length) h=`<div class="note">找不到「${esc(q)}」</div>`;
+  else{
+    const item=([i,tag])=>{const p=DATA.points[i];const tv=tag&&tag!=='名稱'?tag+' '+(p.f[tag]||''):'';return `<div class="r" data-i="${i}"><b>${esc(p.n)}</b><span>${esc(p.l)}${tv?'・'+esc(tv):''}</span></div>`};
+    h=`<div class="note">符合 ${exact.length} 筆</div>`+exact.slice(0,100).map(item).join('');
+    if(!exact.length) h='';
+    if(part.length) h+=`<div class="note">部分符合（${part.length}）</div>`+part.slice(0,50).map(item).join('');
+  }
+  box.innerHTML=h; box.style.display='block';
+  box.querySelectorAll('.r').forEach(el=>el.onclick=()=>{select(+el.dataset.i);box.style.display='none';$('q').blur()});
+}
+$('sf').addEventListener('submit',e=>{
+  e.preventDefault(); const q=$('q').value; const res=search(q);
+  if(!DATA){return}
+  if(res.exact&&res.exact.length===1){select(res.exact[0][0]);$('results').style.display='none';$('q').blur()}
+  else showResults(res,q);
+});
+const syncQx=()=>{$('qx').style.display=$('q').value?'block':'none'};
+$('qx').onclick=()=>{$('q').value='';syncQx();$('results').style.display='none';$('q').focus()};
+$('q').addEventListener('input',syncQx);
+$('q').addEventListener('input',()=>{const q=$('q').value; if(!q.trim()){$('results').style.display='none';return} showResults(search(q),q)});
+
+// ---------- KML parsing ----------
+function txt(el,tag){const x=el.getElementsByTagName(tag)[0];return x?x.textContent.trim():''}
+function stripHtml(s){if(!s)return'';const d=new DOMParser().parseFromString('<div>'+s.replace(/<br\s*\/?>/gi,'\n')+'</div>','text/html');return (d.body.textContent||'').replace(/\n{3,}/g,'\n\n').trim()}
+function coordsOf(s){return s.trim().split(/\s+/).map(t=>t.split(',').map(Number)).filter(a=>a.length>=2&&isFinite(a[0])&&isFinite(a[1])).map(a=>[+a[1].toFixed(6),+a[0].toFixed(6)])}
+function thin(arr,max){if(arr.length<=max)return arr;const step=arr.length/max,out=[];for(let i=0;i<max;i++)out.push(arr[Math.floor(i*step)]);out.push(arr[arr.length-1]);return out}
+const NAMEKEYS=['NoName','ASName','NEW NAME','POS_1','NoID','NOID','IDNo','序號'];
+function parseKML(text){
+  const xml=new DOMParser().parseFromString(text,'application/xml');
+  if(xml.getElementsByTagName('parsererror').length) throw new Error('KML 檔案格式讀不懂');
+  if(!xml.getElementsByTagName('Placemark').length&&xml.getElementsByTagName('NetworkLink').length) throw new Error('這是「保持資料在最新狀態」的連結檔，裡面沒有點位。請重新匯出，不要勾那個選項。');
+  const doc=xml.getElementsByTagName('Document')[0];
+  let name='';
+  if(doc){for(const c of doc.children){if(c.localName==='name'){name=c.textContent.trim();break}}}
+  const pts=[];
+  for(const pm of xml.getElementsByTagName('Placemark')){
+    let layer='';
+    let par=pm.parentElement;
+    while(par){if(par.localName==='Folder'){for(const c of par.children){if(c.localName==='name'){layer=c.textContent.trim();break}}break}par=par.parentElement}
+    const f={};
+    for(const d of pm.getElementsByTagName('Data')){const k=(d.getAttribute('name')||'').replace(/\uFFFD/g,'').trim();const v=txt(d,'value');if(k&&!/^gx_media_links$/i.test(k))f[k]=v.slice(0,300)}
+    for(const d of pm.getElementsByTagName('SimpleData')){const k=d.getAttribute('name');if(k)f[k]=d.textContent.trim().slice(0,300)}
+    let desc=stripHtml(txt(pm,'description')).replace(/\uFFFD/g,'');
+    // My Maps puts "key: value" lines in description too; drop duplicates of ExtendedData
+    if(Object.keys(f).length){desc=desc.split('\n').filter(line=>{const m=line.match(/^([^:：]+)[:：]\s*(.*)$/);return !(m&&f[m[1].trim()]!==undefined)}).join('\n').trim()}
+    for(const k of Object.keys(f)){const v=String(f[k]).replace(/\uFFFD/g,'');f[k]=v}
+    let g='pt',c=null,k=null;
+    const pt=pm.getElementsByTagName('Point')[0], lss=[...pm.getElementsByTagName('LineString')], pgs=[...pm.getElementsByTagName('Polygon')];
+    if(pt){c=coordsOf(txt(pt,'coordinates'))[0]}
+    else if(pgs.length){
+      // 多個面（MultiGeometry）全部保留，不只第一塊
+      const rings=pgs.map(pg=>{const ob=pg.getElementsByTagName('outerBoundaryIs')[0]||pg;return thin(coordsOf(txt(ob,'coordinates')),150)}).filter(r=>r.length>=3);
+      g='poly';
+      if(rings.length){k=rings.length>1?rings.map(r=>[r]):rings[0];const all=rings.flat();let a=0,b=0;all.forEach(q=>{a+=q[0];b+=q[1]});c=[+(a/all.length).toFixed(6),+(b/all.length).toFixed(6)]}}
+    else if(lss.length){
+      const per=lss.length>50?30:150;const lines=lss.map(ls=>thin(coordsOf(txt(ls,'coordinates')),per)).filter(l=>l.length);
+      g='line';
+      if(lines.length){k=lines.length>1?lines:lines[0];const mid=lines[0];c=mid[Math.floor(mid.length/2)]}}
+    if(!c) continue;
+    let nm=txt(pm,'name').replace(/\uFFFD/g,'');
+    if(!nm){for(const key of NAMEKEYS){if(f[key]){nm=key==='POS_1'&&f.IDNo?f.IDNo+'-'+f[key]:f[key];break}}}
+    const o={n:nm||'(未命名)',l:layer||'圖層',c,g};
+    const sm=(txt(pm,'styleUrl').match(/-([0-9A-F]{6})-/i)||[])[1]; if(sm)o.s='#'+sm;
+    if(k&&g!=='pt')o.k=k;
+    if(desc)o.d=desc.slice(0,500);
+    if(Object.keys(f).length)o.f=f;
+    pts.push(o);
+  }
+  if(!pts.length) throw new Error('檔案裡找不到任何點位');
+  return {name,points:pts};
+}
+async function readFile(file){
+  if(/\.kmz$/i.test(file.name)||file.type.includes('kmz')){
+    if(!window.JSZip) await new Promise((ok,no)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';sc.onload=ok;sc.onerror=()=>no(new Error('解壓縮元件載入失敗'));document.head.appendChild(sc)});
+    const zip=await JSZip.loadAsync(file);
+    const k=Object.keys(zip.files).find(n=>/\.kml$/i.test(n));
+    if(!k) throw new Error('KMZ 裡找不到 KML');
+    return zip.files[k].async('string');
+  }
+  return file.text?file.text():new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsText(file)});
+}
+
+// ---------- 登入與後台 ----------
+const CFG=window.SLOPE_CONFIG||{};
+const TOKEN_KEY='slope-map-token';
+let token=null;
+try{const t=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');if(t&&t.exp*1000>Date.now()+60000)token=t.v}catch(e){}
+function jwtPayload(t){try{return JSON.parse(decodeURIComponent(escape(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))))}catch(e){return{}}}
+function setToken(t){token=t;try{t?localStorage.setItem(TOKEN_KEY,JSON.stringify({v:t,exp:jwtPayload(t).exp})):localStorage.removeItem(TOKEN_KEY)}catch(e){}}
+function showLogin(msg){
+  $('login').style.display='flex'; if(msg)$('loginMsg').textContent=msg;
+  const go=()=>{
+    if(!(window.google&&google.accounts&&google.accounts.id)){setTimeout(go,200);return}
+    google.accounts.id.initialize({client_id:CFG.CLIENT_ID,callback:r=>{setToken(r.credential);freshLogin=true;$('login').style.display='none';boot()},auto_select:true,cancel_on_tap_outside:false});
+    $('gbtn').innerHTML='';
+    google.accounts.id.renderButton($('gbtn'),{theme:'filled_blue',size:'large',text:'signin_with',shape:'pill',locale:'zh-TW'});
+    google.accounts.id.prompt();
+  };
+  go();
+}
+function deviceLabel(){
+  const u=navigator.userAgent;let os=/iPhone/.test(u)?'iPhone':/iPad/.test(u)?'iPad':/Android/.test(u)?'Android':/Windows/.test(u)?'Windows':/Mac/.test(u)?'Mac':'其他';
+  let br=/EdgA?\//.test(u)?'Edge':/CriOS|Chrome\//.test(u)?'Chrome':/FxiOS|Firefox/.test(u)?'Firefox':/Safari/.test(u)?'Safari':'瀏覽器';
+  if(navigator.standalone||matchMedia('(display-mode: standalone)').matches)br='主畫面 App';
+  return os+' '+br;
+}
+let freshLogin=false;
+// ---------- 多份圖資 ----------
+let DS=(()=>{try{return new URLSearchParams(location.search).get('d')||localStorage.getItem('slope-ds')||''}catch(e){return ''}})();
+let DSLIST=[];
+function setDs(id){DS=id;try{localStorage.setItem('slope-ds',id)}catch(e){}}
+function renderDsSel(){
+  const sel=$('dsSel');const many=DSLIST.length>1;
+  sel.style.display=many?'':'none';$('dsArrow').style.display=many?'':'none';
+  sel.innerHTML=DSLIST.map(d=>`<option value="${esc(d.id)}"${d.id===DS?' selected':''}>${esc(d.name)}</option>`).join('');
+  renderDsList();
+}
+function renderDsList(){
+  const box=$('dsList');if(!box)return;
+  box.innerHTML=DSLIST.map(d=>`<div class="dsr" data-id="${esc(d.id)}"><span class="nm">${esc(d.name)}${d.id===DS?' <span class="tag" style="color:var(--acc)">目前</span>':''}</span>`+
+    (d.id!==DS?`<button class="btn" type="button" data-a="go">切換</button>`:'')+
+    `<button class="btn" type="button" data-a="ren">改名</button>`+
+    (IS_OWNER&&DSLIST.length>1?`<button class="btn" type="button" data-a="del">移除</button>`:'')+`</div>`).join('');
+  box.querySelectorAll('.dsr').forEach(el=>{
+    const id=el.dataset.id;
+    el.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
+      const m=$('dsMsg');m.style.color='';
+      if(b.dataset.a==='go'){switchDs(id);return}
+      if(b.dataset.a==='ren'){
+        const cur=DSLIST.find(x=>x.id===id);el.querySelector('.nm').innerHTML=`<input value="${esc(cur.name)}" style="width:100%;font-size:15px;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)">`;
+        b.textContent='儲存';b.dataset.a='save';const inp=el.querySelector('input');inp.focus();return}
+      if(b.dataset.a==='save'){const nm=el.querySelector('input').value.trim();
+        try{m.textContent='儲存中⋯';const r=await api('dsRename',{ds:id,name:nm});DSLIST=r.datasets;renderDsSel();m.textContent='已改名。'}catch(err){m.style.color='var(--hi)';m.textContent=errText(err)}return}
+      if(b.dataset.a==='del'){
+        if(!b.dataset.c){b.dataset.c='1';b.textContent='確定移除？';b.style.color='var(--hi)';setTimeout(()=>{if(b.isConnected){delete b.dataset.c;b.textContent='移除';b.style.color=''}},3000);return}
+        try{m.textContent='移除中⋯';const r=await api('dsRemove',{ds:id});DSLIST=r.datasets;if(id===DS)switchDs(r.ds);else renderDsSel();m.textContent='已從列表移除（雲端硬碟的資料檔保留）。'}catch(err){m.style.color='var(--hi)';m.textContent=errText(err)}}
+    });
+  });
+}
+function switchDs(id){
+  if(!id||id===DS&&DATA)return;
+  setDs(id);DATA=null;linkDone=true;$('detail').style.display='none';$('results').style.display='none';
+  try{render()}catch(e){}
+  renderDsSel();boot();
+}
+
+async function api(action,extra){
+  if(!token){showLogin();throw new Error('請先登入')}
+  const r=await fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({action,token,ua:deviceLabel()},extra||{}))});
+  const j=await r.json();
+  if(j.error==='TOKEN'){setToken(null);showLogin('登入已過期，請重新登入。');throw new Error('登入已過期')}
+  if(j.error==='NO_ACCESS'){clearCache();DATA=null;try{render()}catch(e){}setToken(null);try{google.accounts.id.disableAutoSelect()}catch(e){}showLogin(j.message);throw new Error(j.message)}
+  if(j.error) throw new Error(j.message||j.error);
+  return j;
+}
+function errText(e){return (e&&e.message)||String(e)}
+$('acct').onclick=()=>{clearCache();setToken(null);try{google.accounts.id.disableAutoSelect()}catch(e){}DATA=null;render();$('acct').style.display='none';$('openUpload').style.display='none';showLogin('已登出。')};
+
+async function saveParsed(parsed){
+  const json=JSON.stringify({name:parsed.name,points:parsed.points});
+  $('msg').textContent='上傳中⋯';
+  const r=await api('save',{ds:DS,data:json});
+  if(r.datasets){DSLIST=r.datasets;renderDsSel()}
+  DATA={name:parsed.name,updatedAt:r.updated,points:parsed.points};render();cacheData();
+  $('msg').textContent=`完成，共 ${parsed.points.length} 筆，所有人重新整理後就會看到新版。`;
+}
+$('file').addEventListener('change',async e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const msg=$('msg'); msg.style.color=''; msg.textContent='讀取中⋯';
+  try{await saveParsed(parseKML(await readFile(file)))}
+  catch(err){msg.style.color='var(--hi)';msg.textContent=errText(err)||'讀取失敗'}
+  e.target.value='';
+});
+$('syncBtn').onclick=async()=>{
+  const msg=$('msg'); msg.style.color=''; msg.textContent='從我的地圖下載中⋯';
+  try{const r=await api('fetchMyMaps',{ds:DS,url:$('src').value.trim()}); await saveParsed(parseKML(r.kml))}
+  catch(err){msg.style.color='var(--hi)';msg.textContent=errText(err)}
+};
+$('dsSel').onchange=e=>switchDs(e.target.value);
+$('dsAdd').addEventListener('submit',async e=>{e.preventDefault();
+  const m=$('dsMsg');m.style.color='';m.textContent='建立中⋯';
+  try{const r=await api('dsAdd',{name:$('dsName').value.trim(),url:$('dsUrl').value.trim()});DSLIST=r.datasets;
+    if(r.existed){m.textContent='這張地圖已經在列表裡了，已切換過去。';switchDs(r.ds);return}
+    setDs(r.ds);DATA=null;renderDsSel();m.textContent='從我的地圖下載中⋯';
+    const k=await api('fetchMyMaps',{ds:DS});$('msg').textContent='';await saveParsed(parseKML(k.kml));
+    m.textContent='新增完成，已切換到這份圖資。';$('dsName').value='';$('dsUrl').value='';linkDone=true;boot();
+  }catch(err){m.style.color='var(--hi)';m.textContent=errText(err)}
+});
+$('openUpload').onclick=()=>{renderDsList();$('msg').textContent='';$('aclMsg').textContent='';$('ov').style.display='flex';loadAcl()};
+let ME='';
+function aclRender(r){
+  $('aclSheet').href=r.sheetUrl||'#';
+  const rows=[{email:r.owner,role:'edit',owner:true},...r.rows.filter(x=>x.email!==r.owner)];
+  $('aclList').innerHTML=rows.map(x=>{
+    const self=x.email===ME;
+    const lock=x.owner||self;
+    return `<div class="acl" data-e="${esc(x.email)}"><span class="em" title="${esc(x.email)}">${esc(x.email)}${x.owner?' <span class="tag">擁有者</span>':self?' <span class="tag">你</span>':''}</span>`+
+      (lock?`<span class="tag">編輯</span>`:`<select class="btn"><option value="view"${x.role==='view'?' selected':''}>查看</option><option value="edit"${x.role==='edit'?' selected':''}>編輯</option></select><button class="btn" type="button">移除</button>`)+`</div>`;
+  }).join('');
+  $('aclList').querySelectorAll('.acl').forEach(el=>{
+    const e=el.dataset.e, sel=el.querySelector('select'), del=el.querySelector('button');
+    if(sel) sel.onchange=()=>aclDo('aclSet',{email:e,role:sel.value},`已將 ${e} 改為${sel.value==='edit'?'編輯':'查看'}`);
+    if(del) del.onclick=()=>{
+      if(del.dataset.c){aclDo('aclRemove',{email:e},`已移除 ${e}`)}
+      else{del.dataset.c='1';del.textContent='確定移除？';del.style.color='var(--hi)';setTimeout(()=>{if(del.isConnected){delete del.dataset.c;del.textContent='移除';del.style.color=''}},3000)}
+    };
+  });
+}
+async function loadAcl(){
+  $('aclList').innerHTML='<div class="note" style="padding:6px 0">讀取中⋯</div>';
+  try{aclRender(await api('aclList'))}catch(err){$('aclList').innerHTML='';$('aclMsg').textContent=errText(err)}
+}
+async function aclDo(action,extra,okText){
+  const m=$('aclMsg');m.style.color='';m.textContent='儲存中⋯';
+  try{aclRender(await api(action,extra));m.textContent=okText+'，最多 5 分鐘內生效。'}
+  catch(err){m.style.color='var(--hi)';m.textContent=errText(err);loadAcl()}
+}
+let IS_OWNER=false;
+$('logLoad').onclick=async()=>{
+  const box=$('logList');box.innerHTML='<div class="note" style="padding:6px 0">讀取中⋯</div>';
+  try{
+    const r=await api('logList');$('logSheet').href=r.sheetUrl||'#';
+    if(!r.rows.length){box.innerHTML='<div class="note" style="padding:6px 0">還沒有紀錄。</div>';return}
+    const f=t=>{const d=new Date(t);if(isNaN(d))return esc(t);const p=n=>String(n).padStart(2,'0');return `${d.getMonth()+1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`};
+    box.innerHTML=`<div class="note" style="padding:4px 0">共 ${r.total} 筆</div>`+r.rows.map(x=>`<div class="lg"><span class="t">${f(x.t)}</span><span class="e">${esc(x.email)}</span><span class="a${/拒絕/.test(x.action)?' no':''}">${esc(x.action)}</span><span class="d">${esc(x.ua||'')}</span></div>`).join('');
+    $('logLoad').textContent='重新整理';
+  }catch(err){box.innerHTML='';box.textContent=errText(err)}
+};
+$('aclAdd').addEventListener('submit',e=>{e.preventDefault();const em=$('aclEmail').value.trim();if(!em)return;
+  aclDo('aclSet',{email:em,role:$('aclRole').value},`已新增 ${em}`).then(()=>{$('aclEmail').value=''})});
+$('closeUpload').onclick=()=>{$('ov').style.display='none'};
+$('ov').addEventListener('click',e=>{if(e.target===$('ov'))$('ov').style.display='none'});
+
+// ---------- 啟動 ----------
+let googleAdded=false;
+// ---------- 本機快取（IndexedDB）：先顯示上次的圖資，再到後台檢查有沒有更新 ----------
+function idb(){return new Promise((ok,no)=>{try{const r=indexedDB.open('slope-map',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}catch(e){no(e)}})}
+async function idbGet(k){try{const d=await idb();return await new Promise(ok=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>ok(q.result);q.onerror=()=>ok(null)})}catch(e){return null}}
+async function idbSet(k,v){try{const d=await idb();await new Promise(ok=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=ok;t.onerror=ok})}catch(e){}}
+async function idbDel(k){try{const d=await idb();await new Promise(ok=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').delete(k);t.oncomplete=ok;t.onerror=ok})}catch(e){}}
+function clearCache(){try{indexedDB.deleteDatabase('slope-map')}catch(e){}}
+function cacheData(){if(DATA&&DATA.points&&DATA.points.length)idbSet('data:'+DS,{name:DATA.name,updatedAt:DATA.updatedAt,points:DATA.points})}
+
+// ---------- 網址直接定位：?q=點位名稱&ll=緯度,經度 ----------
+const LINK=(()=>{try{const u=new URLSearchParams(location.search);const q=(u.get('q')||'').trim();const ll=(u.get('ll')||'').split(',').map(Number);return(q||ll.length===2&&ll.every(isFinite))?{q,ll:ll.length===2&&ll.every(isFinite)?ll:null}:null}catch(e){return null}})();
+let linkDone=false;
+function applyLink(){
+  if(!LINK||linkDone||!DATA||!DATA.points.length)return;
+  linkDone=true;
+  const near=(arr)=>{if(!LINK.ll||arr.length<2)return arr[0];let b=arr[0],bd=1e18;arr.forEach(i=>{const c=DATA.points[i].c,d=(c[0]-LINK.ll[0])**2+(c[1]-LINK.ll[1])**2;if(d<bd){bd=d;b=i}});return b};
+  if(LINK.q){
+    $('q').value=LINK.q;$('qx').style.display='block';
+    const res=search(LINK.q);
+    if(res.exact.length){
+      let ids=res.exact.map(x=>x[0]);
+      // 只給邊坡編號（如 NO215）時，優先選邊坡範圍本身
+      const shapes=ids.filter(i=>DATA.points[i].g!=='pt'&&/範圍/.test(DATA.points[i].l));
+      if(/^NO\d{3}$/i.test(LINK.q)&&shapes.length)ids=shapes;
+      select(near(ids));return}
+  }
+  if(LINK.ll){
+    let b=-1,bd=1e18;DATA.points.forEach((p,i)=>{const d=(p.c[0]-LINK.ll[0])**2+(p.c[1]-LINK.ll[1])**2;if(d<bd){bd=d;b=i}});
+    if(b>=0&&bd<1e-7){select(b);return}
+    goTo(LINK.ll,18);
+    L.circleMarker(LINK.ll,{radius:9,color:HI(),weight:3,fill:false,pane:'hi',interactive:false}).addTo(map);
+    showToast(LINK.q?`找不到「${LINK.q}」，已移到指定座標`:'已移到指定座標');
+  }else if(LINK.q){showResults(search(LINK.q),LINK.q)}
+}
+async function boot(){
+  let cached=null;
+  if(!DATA){
+    cached=DS?await idbGet('data:'+DS):null;
+    if(cached&&cached.points&&cached.points.length){DATA=cached;render();applyLink();$('mapInfo').textContent+='・檢查更新中⋯'}
+    else $('mapInfo').textContent='下載圖資中⋯';
+  }
+  try{
+    const r=await api('get',{fresh:freshLogin,ds:DS});
+    if(r.ds!==DS){if(DATA&&cached){DATA=null}setDs(r.ds)}
+    DSLIST=r.datasets||[];renderDsSel();freshLogin=false;IS_OWNER=!!r.isOwner;$('logSec').style.display=IS_OWNER?'':'none';
+    $('acct').style.display=''; $('acct').title=r.email+'（按此登出）'; ME=r.email;
+    if(!googleAdded){googleAdded=true;try{addGoogleLayers(r.google)}catch(e){}}
+    if(r.canEdit){$('openUpload').style.display='';$('src').value=r.source||''}
+    const had=DATA&&DATA.points&&DATA.points.length;
+    if(!(had&&DATA.updatedAt===r.updated)){
+      DATA=null;
+      if(r.data){const d=JSON.parse(r.data);DATA={name:d.name,updatedAt:r.updated,points:d.points||[]}}
+      render(!had);linkDone=false;applyLink();
+      if(DATA) cacheData(); else idbDel('data:'+DS);
+    }
+    if(DATA){const d=DATA.updatedAt?new Date(DATA.updatedAt):null;$('mapInfo').textContent=DATA.points.length+' 筆'+(d?'・更新於 '+d.toLocaleDateString('zh-TW'):'')}
+    if(!DATA||!DATA.points.length) $('emptyMsg').textContent=r.canEdit?'還沒有圖資，按右上角「管理」匯入。':'還沒有圖資。';
+  }catch(err){
+    if(token&&!(DATA&&DATA.points&&DATA.points.length)){DATA=null;render();$('mapInfo').textContent='無法讀取圖資';$('emptyMsg').textContent=errText(err)}
+    else if(DATA) $('mapInfo').textContent=DATA.points.length+' 筆・離線資料（無法連線檢查更新）';
+  }
+}
+if(!CFG.API_URL||!CFG.CLIENT_ID||/貼上/.test(CFG.API_URL+CFG.CLIENT_ID)){
+  $('login').style.display='flex';$('loginMsg').textContent='系統尚未設定：請在 config.js 填入 API_URL 與 CLIENT_ID。';
+}else if(token){$('login').style.display='none';boot()}
+else showLogin();
+})();
+</script>
+</body>
+</html>
