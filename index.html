@@ -131,8 +131,8 @@ a.btn{text-decoration:none;display:inline-block}
     <div id="dsMsg" style="font-size:13px;min-height:1.2em;margin-top:6px"></div>
     <h2 style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line)">更新目前這份圖資</h2>
     <p><b>方法一：從我的地圖同步</b><br>來源網址（地圖要開「知道連結的人可以檢視」）。</p>
-    <input id="src" type="url" style="width:100%;font-size:14px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
-    <div class="row"><button class="btn pri" id="syncBtn">立即同步</button></div>
+    <input id="src" type="url" placeholder="（未設定，可貼上我的地圖網址）" style="width:100%;font-size:14px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+    <div class="row"><button class="btn pri" id="syncBtn">立即同步</button><button class="btn" id="srcClear" type="button">清除來源網址</button></div>
     <p style="margin-top:16px"><b>方法二：上傳 KML / KMZ 檔</b><br>我的地圖（電腦版）→ 地圖名稱旁「⋮」→「匯出至 KML/KMZ」，選整份地圖，不要勾「保持資料在最新狀態」。</p>
     <input type="file" id="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz">
     <div id="msg"></div>
@@ -162,7 +162,7 @@ a.btn{text-decoration:none;display:inline-block}
 (function(){
 const $=id=>document.getElementById(id);
 // ---------- 自動檢查新版 ----------
-const APP_VER='20261117-1130';
+const APP_VER='20261119-0900';
 async function checkUpdate(){
   try{
     const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'});if(!r.ok)return;
@@ -537,6 +537,13 @@ $('file').addEventListener('change',async e=>{
   catch(err){msg.style.color='var(--hi)';msg.textContent=errText(err)||'讀取失敗'}
   e.target.value='';
 });
+$('srcClear').onclick=async()=>{
+  const b=$('srcClear'),msg=$('msg');msg.style.color='';
+  if(!b.dataset.c){b.dataset.c='1';b.textContent='確定清除？';b.style.color='var(--hi)';setTimeout(()=>{if(b.isConnected){delete b.dataset.c;b.textContent='清除來源網址';b.style.color=''}},3000);return}
+  delete b.dataset.c;b.textContent='清除來源網址';b.style.color='';
+  try{msg.textContent='清除中⋯';await api('dsClearSource',{ds:DS});$('src').value='';msg.textContent='已清除這份圖資的來源網址。圖資本身不受影響。'}
+  catch(err){msg.style.color='var(--hi)';msg.textContent=errText(err)}
+};
 $('syncBtn').onclick=async()=>{
   const msg=$('msg'); msg.style.color=''; msg.textContent='從我的地圖下載中⋯';
   try{const r=await api('fetchMyMaps',{ds:DS,url:$('src').value.trim()}); await saveParsed(parseKML(r.kml))}
